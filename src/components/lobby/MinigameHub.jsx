@@ -124,6 +124,16 @@ export const LOBBY_MINIGAMES = [
     badgeColor: 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black',
     gradient: 'from-amber-600 to-orange-700',
   },
+  {
+    id: 'RACING',
+    name: 'Đua Xe Tốc Độ',
+    subtitle: 'Đua 2 Người 1.000m 🏎️💨',
+    icon: '🏎️💨',
+    desc: 'Đường đua chia đôi màn hình dọc, né vũng dầu nhặt nitro quýt tăng tốc cán đích 1.000m trước!',
+    badge: 'MỚI 2P RACER 🏎️',
+    badgeColor: 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-black animate-pulse',
+    gradient: 'from-red-600 to-orange-600',
+  },
 ];
 
 export function MinigameHub({ user, userProfile, onBackToPet, onStartGame }) {
@@ -155,7 +165,7 @@ export function MinigameHub({ user, userProfile, onBackToPet, onStartGame }) {
             SẢNH ĐẤU TRÍ ONLINE
           </span>
           <span className="text-[9px] text-slate-500 font-bold">
-            11 Trò Chơi Đối Kháng ⚔️
+            12 Trò Chơi Đối Kháng ⚔️
           </span>
         </div>
 

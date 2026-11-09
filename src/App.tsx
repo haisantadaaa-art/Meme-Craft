@@ -18,6 +18,7 @@ import { TapWarGame } from './components/games/TapWarGame';
 import { SlingPuckGame } from './components/games/SlingPuckGame';
 import { RPSBattleGame } from './components/games/RPSBattleGame';
 import { QuickReflexGame } from './components/games/QuickReflexGame';
+import { MiniRacingGame } from './components/games/MiniRacingGame';
 import { FloatingChatFAB } from './components/FloatingChatFAB';
 import { AuthModal } from './components/AuthModal';
 import { FriendsModal } from './components/FriendsModal';
@@ -29,7 +30,7 @@ import { sound } from './utils/soundEffects';
 export type ScreenState = 'AUTH' | 'PET_HOME' | 'MINIGAME_LOBBY' | 'GAME_ACTIVE';
 
 export interface GameLaunchConfig {
-  gameId: string; // 'SCHULTE' | 'GO' | 'XIANGQI' | 'CARO' | 'MONOPOLY' | 'MILLIONAIRE' | 'WORD_CHAIN' | 'TAP_WAR' | 'SLING_PUCK' | 'RPS' | 'REFLEX'
+  gameId: string; // 'SCHULTE' | 'GO' | 'XIANGQI' | 'CARO' | 'MONOPOLY' | 'MILLIONAIRE' | 'WORD_CHAIN' | 'TAP_WAR' | 'SLING_PUCK' | 'RPS' | 'REFLEX' | 'RACING'
   roomCode?: string;
   myRole?: string;
   isBotMode?: boolean;
@@ -297,6 +298,19 @@ function MainApp() {
                     isBotMode={activeGame.isBotMode}
                     botDifficulty={activeGame.botDifficulty || 'medium'}
                     playerName={user?.displayName || 'Xạ Thủ Tốc Độ'}
+                    onRewardWon={handleRewardWon}
+                    onExit={() => setScreenState('MINIGAME_LOBBY')}
+                  />
+                )}
+
+                {/* 12. ĐUA XE ĐỐI KHÁNG 2 NGƯỜI */}
+                {activeGame.gameId === 'RACING' && (
+                  <MiniRacingGame
+                    roomCode={activeGame.roomCode}
+                    myRole={activeGame.myRole || 'p1'}
+                    isBotMode={activeGame.isBotMode}
+                    botDifficulty={activeGame.botDifficulty || 'medium'}
+                    playerName={user?.displayName || 'Tay Đua'}
                     onRewardWon={handleRewardWon}
                     onExit={() => setScreenState('MINIGAME_LOBBY')}
                   />
