@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { db, ref, update } from '../../services/firebase';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { sound } from '../../utils/soundEffects';
-import { Trophy, RotateCcw, ShieldCheck, Flag, Copy, Check } from 'lucide-react';
+import { GameRoomSession } from '../../utils/multiplayerPeer';
+import { OnlineRoomToolbar } from '../OnlineRoomToolbar';
+import { Trophy, RotateCcw, ShieldCheck, Flag, Copy, Check, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const GO_SIZES = [
-  { size: 9, label: '9x9', desc: 'Tập Sự ⚡' },
+  { size: 9, label: '9x9', desc: 'Dân Gian Nhanh ⚡' },
   { size: 13, label: '13x13', desc: 'Trung Cấp ⚔️' },
   { size: 19, label: '19x19', desc: 'Kỳ Vương 👑' },
 ];
@@ -15,68 +16,85 @@ export const createEmptyGoBoard = (size = 9) =>
     .fill(null)
     .map(() => Array(size).fill(null));
 
-// Thuật toán đếm Khí (Liberties) và tìm nhóm quân liên kết
-export function getGroupAndLiberties(board, startR, startC, size = 9) {
-  const color = board[startR][startC];
-  if (!color) return { group: [], liberties: 0 };
-
-  const group = [];
-  const visited = Array(size)
-    .fill(false)
-    .map(() => Array(size).fill(false));
-  const queue = [[startR, startC]];
-  visited[startR][startC] = true;
-
-  const libertiesSet = new Set();
-  const dirs = [
-    [-1, 0],
-    [1, 0],
-    [0, -1],
-    [0, 1],
+/**
+ * LUẬT CỜ CHẶN / KẸP 2 ĐẦU DÂN GIAN (Sandwich Capture)
+ * Khi một quân đặt xuống mà kẹp 1 hoặc chuỗi quân đối phương ở giữa
+ * theo chiều ngang hoặc chiều dọc (Đen - Trắng - Đen, hoặc Đen - Trắng - Trắng - Đen):
+ * Toàn bộ quân bị kẹp ở giữa lập tức bị nuốt chửng và biến mất!
+ */
+export function checkSandwichCaptures(board, r, c, myColor, size = 9) {
+  const oppColor = myColor === 'b' ? 'w' : 'b';
+  const directions = [
+    [0, 1],   // Ngang phải
+    [0, -1],  // Ngang trái
+    [1, 0],   // Dọc xuống
+    [-1, 0],  // Dọc lên
   ];
 
-  while (queue.length > 0) {
-    const [r, c] = queue.shift();
-    group.push([r, c]);
+  const capturedCoords = [];
 
-    for (const [dr, dc] of dirs) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr >= 0 && nr < size && nc >= 0 && nc < size) {
-        if (!board[nr][nc]) {
-          libertiesSet.add(`${nr}-${nc}`);
-        } else if (board[nr][nc] === color && !visited[nr][nc]) {
-          visited[nr][nc] = true;
-          queue.push([nr, nc]);
+  for (const [dr, dc] of directions) {
+    const potential = [];
+    let step = 1;
+
+    while (true) {
+      const nr = r + dr * step;
+      const nc = c + dc * step;
+
+      // Ra ngoài bàn cờ
+      if (nr < 0 || nr >= size || nc < 0 || nc >= size) {
+        break;
+      }
+
+      const cell = board[nr][nc];
+
+      if (cell === oppColor) {
+        potential.push([nr, nc]);
+        step++;
+      } else if (cell === myColor) {
+        // Tìm thấy quân cùng màu ở đầu bên kia -> Kẹp thành công!
+        if (potential.length > 0) {
+          capturedCoords.push(...potential);
         }
+        break;
+      } else {
+        // Gặp ô trống -> Không bị kẹp 2 đầu
+        break;
       }
     }
   }
 
-  return { group, liberties: libertiesSet.size };
+  return capturedCoords;
 }
 
 export function GoGame({
-  roomData,
-  roomCode,
-  myRole = 'b', // 'b': Đen đi trước, 'w': Trắng
-  isBotMode = false,
+  roomData = null,
+  roomCode: initialRoomCode = '',
+  myRole: initialRole = 'b',
+  isBotMode: initialBotMode = true,
   playerName = 'Kỳ Thủ',
   onRewardWon,
   onExit,
 }) {
-  const [boardSize, setBoardSize] = useState(() => roomData?.boardSize || 9);
+  const [isOnlineMode, setIsOnlineMode] = useState(!initialBotMode);
+  const [roomCode, setRoomCode] = useState(initialRoomCode);
+  const [myRole, setMyRole] = useState(initialRole); // 'b': Đen, 'w': Trắng
+  const [connectedGuest, setConnectedGuest] = useState(null);
+
+  const [boardSize, setBoardSize] = useState(9);
   const [botDifficulty, setBotDifficulty] = useState('medium');
-  const [localBoard, setLocalBoard] = useState(() => createEmptyGoBoard(9));
-  const [localTurn, setLocalTurn] = useState('b'); // Đen luôn đi trước
-  const [localPrisoners, setLocalPrisoners] = useState({ b: 0, w: 0 }); // Số quân tù binh đã bắt
-  const [localWinner, setLocalWinner] = useState(null);
+  const [board, setBoard] = useState(() => createEmptyGoBoard(9));
+  const [currentTurn, setCurrentTurn] = useState('b'); // Đen luôn đi trước
+  const [prisoners, setPrisoners] = useState({ b: 0, w: 0 }); // Số quân ăn thịt được
+  const [winner, setWinner] = useState(null);
   const [lastMove, setLastMove] = useState(null);
   const [passCount, setPassCount] = useState(0);
   const [rewardClaimed, setRewardClaimed] = useState(false);
-  const [copied, setCopied] = useState(false);
 
-  // Điểm sao Hoshiboshi chuẩn theo kích thước
+  const sessionRef = useRef(null);
+  const botTimerRef = useRef(null);
+
+  // Điểm sao Hoshiboshi chuẩn
   const starPoints = useMemo(() => {
     if (boardSize === 9) {
       return [
@@ -99,255 +117,264 @@ export function GoGame({
     }
   }, [boardSize]);
 
-  const board = isBotMode ? localBoard : roomData?.board || localBoard;
-  const currentTurn = isBotMode ? localTurn : roomData?.currentTurn || 'b';
-  const prisoners = isBotMode ? localPrisoners : roomData?.prisoners || { b: 0, w: 0 };
-  const winner = isBotMode ? localWinner : roomData?.winner || null;
+  const isMyTurn = isOnlineMode ? currentTurn === myRole : currentTurn === 'b';
 
-  const isMyTurn = isBotMode ? localTurn === myRole : currentTurn === myRole;
-
-  const handleSelectSize = (newSize) => {
-    if (newSize === boardSize) return;
-    setBoardSize(newSize);
-    setLocalBoard(createEmptyGoBoard(newSize));
-    setLocalTurn('b');
-    setLocalPrisoners({ b: 0, w: 0 });
-    setLocalWinner(null);
+  // Khởi tạo ván cờ mới
+  const resetGame = useCallback((size = boardSize) => {
+    setBoardSize(size);
+    setBoard(createEmptyGoBoard(size));
+    setCurrentTurn('b');
+    setPrisoners({ b: 0, w: 0 });
+    setWinner(null);
     setLastMove(null);
     setPassCount(0);
     setRewardClaimed(false);
-    sound.playClick();
-  };
 
-  // Bot AI đánh cờ Vây
-  const makeBotMove = useCallback(
-    (currentB, currentP) => {
-      const size = boardSize;
-      const botColor = myRole === 'b' ? 'w' : 'b';
-      const oppColor = myRole;
+    if (botTimerRef.current) clearTimeout(botTimerRef.current);
 
-      // Tìm tất cả các ô hợp lệ (không tự sát)
-      const validMoves = [];
-      for (let r = 0; r < size; r++) {
-        for (let c = 0; c < size; c++) {
-          if (!currentB[r][c]) {
-            // Giả lập đặt quân
-            const testB = currentB.map((row) => [...row]);
-            testB[r][c] = botColor;
+    if (isOnlineMode && sessionRef.current) {
+      sessionRef.current.syncGameState({
+        board: createEmptyGoBoard(size),
+        boardSize: size,
+        currentTurn: 'b',
+        prisoners: { b: 0, w: 0 },
+        winner: null,
+        lastMove: null,
+      });
+    }
+  }, [boardSize, isOnlineMode]);
 
-            // Kiểm tra có bắt được quân đối thủ nào không
-            let canCapture = 0;
-            const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-            for (const [dr, dc] of dirs) {
-              const nr = r + dr;
-              const nc = c + dc;
-              if (nr >= 0 && nr < size && nc >= 0 && nc < size && testB[nr][nc] === oppColor) {
-                const { liberties } = getGroupAndLiberties(testB, nr, nc, size);
-                if (liberties === 0) canCapture++;
-              }
-            }
+  // Bot AI chơi luật kẹp dân gian
+  useEffect(() => {
+    if (isOnlineMode || winner || currentTurn !== 'w') return;
 
-            const { liberties: myLiberties } = getGroupAndLiberties(testB, r, c, size);
-            if (myLiberties > 0 || canCapture > 0) {
-              validMoves.push({ r, c, captureScore: canCapture * 10, myLiberties });
-            }
-          }
+    const size = boardSize;
+    // Tìm các nước đi cho Bot
+    const candidateMoves = [];
+
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (!board[r][c]) {
+          // Kiểm tra nếu bot đặt ở đây có kẹp ăn quân không
+          const testB = board.map((row) => [...row]);
+          testB[r][c] = 'w';
+          const captured = checkSandwichCaptures(testB, r, c, 'w', size);
+          candidateMoves.push({ r, c, captures: captured.length });
         }
       }
+    }
 
-      if (validMoves.length === 0) {
-        // Bot bỏ lượt (Pass)
-        sound.playTing();
-        setLocalTurn(myRole);
-        return;
-      }
+    if (candidateMoves.length === 0) return;
 
-      // Ưu tiên bắt quân hoặc giữ nhiều khí
-      validMoves.sort((a, b) => b.captureScore + b.myLiberties - (a.captureScore + a.myLiberties));
+    // Ưu tiên nước kẹp ăn được nhiều quân nhất
+    candidateMoves.sort((a, b) => b.captures - a.captures);
 
-      const pool = botDifficulty === 'easy' ? Math.min(6, validMoves.length) : botDifficulty === 'medium' ? Math.min(3, validMoves.length) : 1;
-      const chosen = validMoves[Math.floor(Math.random() * pool)];
+    const pool = botDifficulty === 'easy' ? Math.min(8, candidateMoves.length) : botDifficulty === 'medium' ? Math.min(3, candidateMoves.length) : 1;
+    const chosen = candidateMoves[Math.floor(Math.random() * pool)];
 
-      setTimeout(() => {
-        executeStonePlacement(chosen.r, chosen.c, botColor, currentB, currentP);
-      }, 500);
-    },
-    [boardSize, botDifficulty, myRole]
-  );
+    botTimerRef.current = setTimeout(() => {
+      executeMove(chosen.r, chosen.c, 'w');
+    }, 600);
 
-  // Đặt quân cờ & xử lý bắt quân (Capture)
-  const executeStonePlacement = (r, c, color, currentB, currentP) => {
+    return () => {
+      if (botTimerRef.current) clearTimeout(botTimerRef.current);
+    };
+  }, [isOnlineMode, winner, currentTurn, board, boardSize, botDifficulty]);
+
+  // Thực hiện nước đi & nuốt chửng quân kẹp 2 đầu
+  const executeMove = (r, c, color) => {
     const size = boardSize;
-    const oppColor = color === 'b' ? 'w' : 'b';
-    const nextB = currentB.map((row) => [...row]);
+    const nextB = board.map((row) => [...row]);
     nextB[r][c] = color;
 
-    // Kiểm tra và bắt các nhóm quân đối thủ hết khí
-    let capturedCount = 0;
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    const capturedStones = new Set();
-
-    for (const [dr, dc] of dirs) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr >= 0 && nr < size && nc >= 0 && nc < size && nextB[nr][nc] === oppColor) {
-        const { group, liberties } = getGroupAndLiberties(nextB, nr, nc, size);
-        if (liberties === 0) {
-          group.forEach(([gr, gc]) => capturedStones.add(`${gr}-${gc}`));
-        }
-      }
+    // QUY TẮC KẸP 2 ĐẦU DÂN GIAN
+    const captured = checkSandwichCaptures(nextB, r, c, color, size);
+    if (captured.length > 0) {
+      sound.playWin();
+      captured.forEach(([cr, cc]) => {
+        nextB[cr][cc] = null; // Nuốt chửng và biến mất khỏi bàn cờ!
+      });
+    } else {
+      sound.playCaroMove();
     }
-
-    // Xóa quân bị bắt khỏi bàn cờ
-    capturedStones.forEach((key) => {
-      const [cr, cc] = key.split('-').map(Number);
-      nextB[cr][cc] = null;
-      capturedCount++;
-    });
-
-    // Kiểm tra quy tắc cấm tự sát (Suicide rule)
-    const { liberties: myLib } = getGroupAndLiberties(nextB, r, c, size);
-    if (myLib === 0 && capturedCount === 0) {
-      // Nước cờ tự sát bất hợp pháp
-      sound.playBomb();
-      return false;
-    }
-
-    sound.playCaroMove();
-    setLastMove({ r, c });
-    setPassCount(0);
 
     const nextPrisoners = {
-      ...currentP,
-      [color]: (currentP[color] || 0) + capturedCount,
+      ...prisoners,
+      [color]: prisoners[color] + captured.length,
     };
 
     const nextTurn = color === 'b' ? 'w' : 'b';
 
-    if (isBotMode) {
-      setLocalBoard(nextB);
-      setLocalPrisoners(nextPrisoners);
-      setLocalTurn(nextTurn);
+    setBoard(nextB);
+    setPrisoners(nextPrisoners);
+    setCurrentTurn(nextTurn);
+    setLastMove({ r, c, capturedCount: captured.length });
+    setPassCount(0);
 
-      if (color === myRole) {
-        makeBotMove(nextB, nextPrisoners);
-      }
-    } else if (roomCode) {
-      update(ref(db, `rooms/${roomCode}`), {
-        board: nextB,
-        prisoners: nextPrisoners,
-        currentTurn: nextTurn,
-        lastMove: { r, c },
-      }).catch((e) => console.error('Lỗi đi cờ vây:', e));
-    }
-
-    return true;
-  };
-
-  const handleCellClick = (r, c) => {
-    if (winner || board[r][c] || !isMyTurn) return;
-    executeStonePlacement(r, c, isBotMode ? myRole : currentTurn, board, prisoners);
-  };
-
-  // Bỏ lượt (Pass)
-  const handlePass = () => {
-    sound.playTing();
-    const nextP = passCount + 1;
-    setPassCount(nextP);
-
-    if (nextP >= 2) {
-      // 2 người liên tiếp pass -> kết thúc ván và tính điểm
-      const bScore = prisoners.b;
-      const wScore = prisoners.w;
-      const win = bScore >= wScore ? 'b' : 'w';
-
-      if (isBotMode) {
-        setLocalWinner(win);
-      } else if (roomCode) {
-        update(ref(db, `rooms/${roomCode}`), { winner: win });
-      }
-
+    // Kiểm tra kết thúc nếu một bên ăn được mốc điểm áp đảo
+    if (nextPrisoners.b >= 15 || nextPrisoners.w >= 15) {
+      const win = nextPrisoners.b >= 15 ? 'b' : 'w';
+      setWinner(win);
       if (win === myRole) {
-        sound.playWin();
-        confetti({ particleCount: 70, spread: 70, origin: { y: 0.5 } });
+        confetti({ particleCount: 70, spread: 70 });
         if (!rewardClaimed && onRewardWon) {
           setRewardClaimed(true);
           onRewardWon(100, 2);
         }
       }
-      return;
     }
 
-    const nextTurn = currentTurn === 'b' ? 'w' : 'b';
-    if (isBotMode) {
-      setLocalTurn(nextTurn);
-      makeBotMove(board, prisoners);
-    } else if (roomCode) {
-      update(ref(db, `rooms/${roomCode}`), { currentTurn: nextTurn });
-    }
-  };
-
-  // Đầu hàng (Resign)
-  const handleResign = () => {
-    if (confirm('Bạn có chắc chắn muốn nhận thua ván này không?')) {
-      const oppWin = myRole === 'b' ? 'w' : 'b';
-      if (isBotMode) {
-        setLocalWinner(oppWin);
-      } else if (roomCode) {
-        update(ref(db, `rooms/${roomCode}`), { winner: oppWin });
-      }
-      sound.playLose();
+    if (isOnlineMode && sessionRef.current) {
+      sessionRef.current.syncGameState({
+        board: nextB,
+        prisoners: nextPrisoners,
+        currentTurn: nextTurn,
+        lastMove: { r, c },
+        winner: nextPrisoners.b >= 15 ? 'b' : nextPrisoners.w >= 15 ? 'w' : null,
+      });
     }
   };
 
-  const handleCopyCode = () => {
-    if (!roomCode) return;
-    navigator.clipboard.writeText(roomCode);
-    setCopied(true);
-    sound.playClick();
-    setTimeout(() => setCopied(false), 2000);
+  const handleCellClick = (r, c) => {
+    if (board[r][c] || winner || !isMyTurn) return;
+    executeMove(r, c, isOnlineMode ? myRole : 'b');
+  };
+
+  // Quản lý P2P Online
+  const handleCreateOnlineRoom = async () => {
+    const session = new GameRoomSession(
+      'go',
+      { uid: 'host_' + Date.now(), displayName: playerName, avatar: '⚫' },
+      (gameState) => {
+        if (gameState.board) setBoard(gameState.board);
+        if (gameState.boardSize) setBoardSize(gameState.boardSize);
+        if (gameState.currentTurn) setCurrentTurn(gameState.currentTurn);
+        if (gameState.prisoners) setPrisoners(gameState.prisoners);
+        if (gameState.winner) setWinner(gameState.winner);
+        if (gameState.lastMove) setLastMove(gameState.lastMove);
+      },
+      (guest) => setConnectedGuest(guest),
+      () => setConnectedGuest(null)
+    );
+
+    const code = await session.createRoom({
+      board: createEmptyGoBoard(boardSize),
+      boardSize,
+      currentTurn: 'b',
+      prisoners: { b: 0, w: 0 },
+      winner: null,
+      lastMove: null,
+    });
+
+    sessionRef.current = session;
+    setRoomCode(code);
+    setMyRole('b'); // Host cầm Đen
+    resetGame(boardSize);
+  };
+
+  const handleJoinOnlineRoom = async (codeToJoin) => {
+    const session = new GameRoomSession(
+      'go',
+      { uid: 'guest_' + Date.now(), displayName: playerName, avatar: '⚪' },
+      (gameState) => {
+        if (gameState.board) setBoard(gameState.board);
+        if (gameState.boardSize) setBoardSize(gameState.boardSize);
+        if (gameState.currentTurn) setCurrentTurn(gameState.currentTurn);
+        if (gameState.prisoners) setPrisoners(gameState.prisoners);
+        if (gameState.winner) setWinner(gameState.winner);
+        if (gameState.lastMove) setLastMove(gameState.lastMove);
+      },
+      (guest) => setConnectedGuest(guest),
+      () => setConnectedGuest(null)
+    );
+
+    await session.joinRoom(codeToJoin);
+    sessionRef.current = session;
+    setRoomCode(codeToJoin);
+    setMyRole('w'); // Khách cầm Trắng
+    setConnectedGuest({ name: 'Chủ Phòng' });
+  };
+
+  const handleLeaveOnlineRoom = () => {
+    if (sessionRef.current) {
+      sessionRef.current.leaveRoom();
+      sessionRef.current = null;
+    }
+    setRoomCode('');
+    setConnectedGuest(null);
+    setMyRole('b');
+    resetGame(boardSize);
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between p-2.5 sm:p-3 select-none font-jakarta max-w-[430px] mx-auto w-full h-full overflow-hidden text-slate-800">
-      {/* 1. Header & Đối thủ phía trên */}
+    <div className="flex-1 flex flex-col justify-between p-2 select-none font-jakarta max-w-[430px] mx-auto w-full h-full overflow-hidden text-slate-800">
+      {/* 1. THANH CHỌN CHẾ ĐỘ: BOT vs ONLINE 2 NGƯỜI */}
+      <OnlineRoomToolbar
+        isOnlineMode={isOnlineMode}
+        onToggleMode={(online) => {
+          setIsOnlineMode(online);
+          if (!online) handleLeaveOnlineRoom();
+          else resetGame(boardSize);
+        }}
+        roomCode={roomCode}
+        isHost={myRole === 'b'}
+        myRole={myRole}
+        connectedPlayer={connectedGuest}
+        onCreateRoom={handleCreateOnlineRoom}
+        onJoinRoom={handleJoinOnlineRoom}
+        onLeaveRoom={handleLeaveOnlineRoom}
+      />
+
+      {/* 2. HEADER TỶ SỐ & QUÂN ĂN ĐƯỢC THEO LUẬT DÂN GIAN */}
       <div className="bg-white/95 p-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-8 h-8 rounded-full bg-white border-2 border-slate-700 shadow-sm flex items-center justify-center text-base font-black shrink-0">
-            {myRole === 'b' ? '⚪' : '⚫'}
+        {/* Bên Đen */}
+        <div className={`flex items-center gap-1.5 p-1 rounded-xl flex-1 min-w-0 ${currentTurn === 'b' ? 'bg-amber-100 border border-amber-300' : 'bg-slate-50'}`}>
+          <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-slate-700 shadow-sm flex items-center justify-center text-sm font-black text-white shrink-0">
+            ⚫
           </div>
           <div className="min-w-0 leading-tight">
-            <span className="font-fredoka font-black text-xs text-slate-800 block truncate">
-              {isBotMode ? `Bot Cờ Vây (${botDifficulty === 'easy' ? 'Dễ' : botDifficulty === 'medium' ? 'Vừa' : 'Khó'})` : 'Đối Thủ'}
+            <span className="font-fredoka font-black text-xs text-slate-900 block truncate">
+              {isOnlineMode ? (myRole === 'b' ? `${playerName} (Bạn)` : 'Đối Thủ') : `${playerName} (Đen)`}
             </span>
-            <span className="text-[10px] text-slate-500">
-              Bắt được: {prisoners[myRole === 'b' ? 'w' : 'b']} quân • {currentTurn !== myRole ? 'Đang nghĩ... ⏳' : 'Chờ bạn'}
+            <span className="text-[10px] font-fredoka font-bold text-amber-800">
+              Kẹp ăn: {prisoners.b} quân
             </span>
           </div>
         </div>
 
-        {/* Nút chọn kích thước */}
-        {isBotMode && (
-          <div className="flex rounded-xl bg-amber-50 p-0.5 border border-amber-200">
-            {GO_SIZES.map((b) => (
-              <button
-                key={b.size}
-                onClick={() => handleSelectSize(b.size)}
-                className={`px-1.5 py-0.5 rounded-lg text-[10px] font-fredoka font-bold transition ${
-                  boardSize === b.size ? 'bg-amber-400 text-black shadow-2xs' : 'text-amber-800'
-                }`}
-              >
-                {b.label}
-              </button>
-            ))}
+        {/* Thanh lượt & kích thước */}
+        <div className="text-center px-1 shrink-0">
+          <span className="font-fredoka font-black text-[11px] text-amber-950 block">
+            LUẬT KẸP 2 ĐẦU
+          </span>
+          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${currentTurn === 'b' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}>
+            {currentTurn === 'b' ? 'Đen Đi ⏳' : 'Trắng Đi ⏳'}
+          </span>
+        </div>
+
+        {/* Bên Trắng */}
+        <div className={`flex items-center justify-end gap-1.5 p-1 rounded-xl flex-1 min-w-0 ${currentTurn === 'w' ? 'bg-amber-100 border border-amber-300' : 'bg-slate-50'}`}>
+          <div className="min-w-0 leading-tight text-right">
+            <span className="font-fredoka font-black text-xs text-slate-900 block truncate">
+              {isOnlineMode
+                ? myRole === 'w'
+                  ? `${playerName} (Bạn)`
+                  : connectedGuest?.name || 'Đối Thủ'
+                : `Bot (${botDifficulty === 'easy' ? 'Dễ' : botDifficulty === 'medium' ? 'Vừa' : 'Khó'})`}
+            </span>
+            <span className="text-[10px] font-fredoka font-bold text-amber-800">
+              Kẹp ăn: {prisoners.w} quân
+            </span>
           </div>
-        )}
+          <div className="w-8 h-8 rounded-full bg-white border-2 border-slate-400 shadow-sm flex items-center justify-center text-sm font-black text-slate-800 shrink-0">
+            ⚪
+          </div>
+        </div>
       </div>
 
-      {/* 2. Bàn cờ vây chính giữa màn hình dọc */}
+      {/* 3. BÀN CỜ VÂY DÂN GIAN CĂN GIỮA */}
       <div className="flex-1 flex items-center justify-center p-1 relative my-auto">
         <div className="w-full max-w-[360px] aspect-square bg-[#DEB887] rounded-2xl p-2 shadow-lg border-2 border-[#8B5A2B] flex flex-col justify-center relative">
-          {/* Lưới đường kẻ bàn cờ Vây */}
           <div
             className="grid w-full h-full relative"
             style={{
@@ -367,7 +394,7 @@ export function GoGame({
                     disabled={Boolean(cell || winner || !isMyTurn)}
                     className="w-full h-full relative flex items-center justify-center cursor-pointer group"
                   >
-                    {/* Đường kẻ chữ thập qua tâm ô */}
+                    {/* Đường kẻ chữ thập */}
                     <div
                       className={`absolute inset-x-0 h-[1.5px] bg-[#654321]/70 top-1/2 -translate-y-1/2 ${
                         c === 0 ? 'left-1/2' : c === boardSize - 1 ? 'right-1/2' : ''
@@ -379,15 +406,14 @@ export function GoGame({
                       }`}
                     />
 
-                    {/* Điểm sao Hoshiboshi */}
                     {isStar && !cell && (
                       <div className="w-2 h-2 rounded-full bg-[#3E2723] z-10 pointer-events-none" />
                     )}
 
-                    {/* Quân Cờ Đen */}
+                    {/* Quân Đen */}
                     {cell === 'b' && (
                       <div
-                        className={`w-[85%] h-[85%] rounded-full bg-gradient-to-br from-slate-800 to-black shadow-md z-20 border border-slate-700 flex items-center justify-center ${
+                        className={`w-[86%] h-[86%] rounded-full bg-gradient-to-br from-slate-800 to-black shadow-md z-20 border border-slate-700 flex items-center justify-center ${
                           isLast ? 'ring-2 ring-amber-400' : ''
                         }`}
                       >
@@ -395,10 +421,10 @@ export function GoGame({
                       </div>
                     )}
 
-                    {/* Quân Cờ Trắng */}
+                    {/* Quân Trắng */}
                     {cell === 'w' && (
                       <div
-                        className={`w-[85%] h-[85%] rounded-full bg-gradient-to-br from-white to-slate-200 shadow-md z-20 border border-slate-300 flex items-center justify-center ${
+                        className={`w-[86%] h-[86%] rounded-full bg-gradient-to-br from-white to-slate-200 shadow-md z-20 border border-slate-300 flex items-center justify-center ${
                           isLast ? 'ring-2 ring-amber-400' : ''
                         }`}
                       >
@@ -413,51 +439,20 @@ export function GoGame({
         </div>
       </div>
 
-      {/* 3. Thanh thông tin người chơi phía dưới (Bạn) */}
-      <div className="bg-white/95 p-2.5 rounded-2xl border border-amber-200 shadow-2xs shrink-0 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-slate-700 shadow-sm flex items-center justify-center text-base font-black shrink-0">
-            {myRole === 'b' ? '⚫' : '⚪'}
-          </div>
-          <div className="leading-tight">
-            <span className="font-fredoka font-black text-xs text-slate-800 block">
-              {playerName} (Bạn)
-            </span>
-            <span className={`text-[10px] font-bold ${isMyTurn ? 'text-emerald-600 animate-pulse' : 'text-slate-400'}`}>
-              Bắt được: {prisoners[myRole]} quân • {isMyTurn ? 'Lượt của bạn! ✨' : 'Chờ đối thủ...'}
-            </span>
-          </div>
-        </div>
+      {/* 4. FOOTER & HƯỚNG DẪN KẸP DÂN GIAN */}
+      <div className="bg-white/95 p-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0 flex items-center justify-between text-xs">
+        <span className="text-[10px] font-fredoka font-bold text-amber-900 flex items-center gap-1">
+          <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          Kẹp quân đối thủ giữa 2 quân của mình (ngang/dọc) để nuốt chửng ngay!
+        </span>
 
-        {/* Nút Bỏ lượt & Xin thua */}
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={handlePass}
-            disabled={!isMyTurn || Boolean(winner)}
-            className="px-2.5 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-fredoka font-bold text-xs border border-amber-300 transition active:scale-95 disabled:opacity-50"
-          >
-            Bỏ Lượt
-          </button>
-          <button
-            onClick={handleResign}
-            disabled={Boolean(winner)}
-            className="px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-fredoka font-bold text-xs border border-rose-200 transition active:scale-95 disabled:opacity-50"
-          >
-            Nhận Thua
-          </button>
-        </div>
+        <button
+          onClick={() => resetGame(boardSize)}
+          className="px-2.5 py-1 rounded-xl bg-amber-400 hover:bg-amber-500 text-black font-fredoka font-black text-xs border border-amber-500 shadow-2xs transition active:scale-95 shrink-0"
+        >
+          Ván Mới 🔄
+        </button>
       </div>
-
-      {/* Banner kết thúc */}
-      {winner && (
-        <div className="mt-2 p-2 bg-gradient-to-r from-amber-100 to-orange-100 border border-amber-400 rounded-2xl text-center shadow-xs animate-in zoom-in-95">
-          <span className="font-fredoka font-black text-xs text-amber-950">
-            {winner === myRole
-              ? '🎉 BẠN ĐÃ CHIẾN THẮNG KỲ THỦ ĐỐI PHƯƠNG! (+100 Xu & 1 Túi Quà Trợ Chiến)'
-              : '😢 BẠN ĐÃ THUA VÁN NÀY! HÃY LUYỆN TẬP VÀ PHỤC THÙ NHA!'}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

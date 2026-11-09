@@ -294,9 +294,6 @@ function MainApp() {
                   />
                 )}
               </div>
-
-              {/* Bé Thú Cưng Mini Ngồi Góc Cổ Vũ (Pet Cheerleader) */}
-              <PetCheerleaderWidget />
             </div>
           )}
         </main>

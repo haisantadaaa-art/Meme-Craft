@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { db, ref, update } from '../../services/firebase';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { sound } from '../../utils/soundEffects';
+import { GameRoomSession } from '../../utils/multiplayerPeer';
+import { OnlineRoomToolbar } from '../OnlineRoomToolbar';
 import { fetchGeminiMillionaireQuestion } from '../../services/geminiService';
 import { Trophy, Clock, Sparkles, RotateCcw, CheckCircle2, XCircle, HelpCircle, Users, RefreshCw, Zap } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 // ==========================================
-// KHO 100 CÂU HỎI OFFLINE DỰ PHÒNG PHONG PHÚ
+// KHO CÂU HỎI OFFLINE DỰ PHÒNG PHONG PHÚ
 // ==========================================
 export const OFFLINE_QUESTIONS = [
   {
@@ -67,22 +68,29 @@ export const PRIZE_LADDER = [
 ];
 
 export function MillionaireGame({
-  roomData,
-  roomCode,
-  myRole = 'X',
-  isBotMode = false,
+  roomData = null,
+  roomCode: initialRoomCode = '',
+  myRole: initialRole = 'X',
+  isBotMode: initialBotMode = true,
   playerName = 'Chủ Tiệm',
   onRewardWon,
   onExit,
 }) {
+  const [isOnlineMode, setIsOnlineMode] = useState(!initialBotMode);
+  const [roomCode, setRoomCode] = useState(initialRoomCode);
+  const [myRole, setMyRole] = useState(initialRole);
+  const [connectedPlayer, setConnectedPlayer] = useState(null);
+
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(OFFLINE_QUESTIONS[0]);
   const [selectedOption, setSelectedOption] = useState(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [timeLeft, setTimeLeft] = useState(15);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [gameResultMsg, setGameResultMsg] = useState('');
   const [isLoadingGemini, setIsLoadingGemini] = useState(false);
-  const [scores, setScores] = useState({ player: 0, bot: 0 });
+  const [scores, setScores] = useState({ player: 0, opponent: 0 });
+  const [rewardClaimed, setRewardClaimed] = useState(false);
 
   // 3 Quyền trợ giúp
   const [lifelines, setLifelines] = useState({
@@ -93,10 +101,11 @@ export function MillionaireGame({
   const [hiddenOptions, setHiddenOptions] = useState([]);
   const [geminiHintText, setGeminiHintText] = useState('');
 
+  const sessionRef = useRef(null);
   const timerRef = useRef(null);
 
   // Tải câu hỏi mới từ Gemini API hoặc offline pool
-  const loadNextQuestion = async (index) => {
+  const loadNextQuestion = useCallback(async (index) => {
     setIsLoadingGemini(true);
     setHiddenOptions([]);
     setGeminiHintText('');
@@ -104,7 +113,6 @@ export function MillionaireGame({
     setIsAnswered(false);
     setTimeLeft(15);
 
-    // Thử gọi Gemini API trước
     const topics = ['Ẩm thực Việt Nam', 'Văn hóa & Lịch sử', 'Khoa học đời sống', 'Đố vui ca dao'];
     const randomTopic = topics[index % topics.length];
     const geminiQ = await fetchGeminiMillionaireQuestion(randomTopic, index + 1);
@@ -117,11 +125,94 @@ export function MillionaireGame({
     }
 
     setIsLoadingGemini(false);
+  }, []);
+
+  // Thiết lập phiên kết nối Online P2P
+  useEffect(() => {
+    if (!isOnlineMode) {
+      if (sessionRef.current) {
+        sessionRef.current.destroy();
+        sessionRef.current = null;
+      }
+      return;
+    }
+
+    const session = new GameRoomSession({
+      gameType: 'millionaire',
+      playerName,
+      onState: (state) => {
+        if (!state) return;
+        if (state.questionIndex !== undefined) {
+          setCurrentQuestionIndex(state.questionIndex);
+        }
+        if (state.question) {
+          setCurrentQuestion(state.question);
+          setSelectedOption(null);
+          setIsAnswered(false);
+          setTimeLeft(15);
+        }
+        if (state.scores) {
+          setScores(state.scores);
+        }
+        if (state.isGameOver) {
+          setIsGameOver(true);
+          setGameResultMsg(state.resultMsg || 'Trận đấu kết thúc!');
+        }
+        if (state.p2) setConnectedPlayer(state.p2.name);
+      },
+      onPlayerJoin: (player) => {
+        setConnectedPlayer(player.name);
+        sound.playTing();
+      },
+      onPlayerLeave: () => {
+        setConnectedPlayer(null);
+      },
+    });
+
+    sessionRef.current = session;
+
+    return () => {
+      session.destroy();
+      sessionRef.current = null;
+    };
+  }, [isOnlineMode, playerName]);
+
+  // Tạo phòng online
+  const handleCreateRoom = async () => {
+    if (!sessionRef.current) return;
+    const code = await sessionRef.current.createRoom();
+    setRoomCode(code);
+    setMyRole('X');
+    handleRestart();
+  };
+
+  // Vào phòng online
+  const handleJoinRoom = async (code) => {
+    if (!sessionRef.current) return;
+    const ok = await sessionRef.current.joinRoom(code);
+    if (ok) {
+      setRoomCode(code);
+      setMyRole('O');
+      sound.playTing();
+    } else {
+      alert('Không tìm thấy phòng!');
+    }
+  };
+
+  // Rời phòng online
+  const handleLeaveRoom = () => {
+    if (sessionRef.current) {
+      sessionRef.current.leaveRoom();
+    }
+    setRoomCode('');
+    setConnectedPlayer(null);
+    setIsOnlineMode(false);
+    handleRestart();
   };
 
   useEffect(() => {
     loadNextQuestion(0);
-  }, []);
+  }, [loadNextQuestion]);
 
   // Đếm ngược 15s cho mỗi câu hỏi
   useEffect(() => {
@@ -170,10 +261,10 @@ export function MillionaireGame({
       sound.playTing();
       sound.playWin();
 
-      setScores((prev) => ({ ...prev, player: prev.player + 100 + timeLeft * 10 }));
+      const earnedPts = 100 + timeLeft * 10;
+      setScores((prev) => ({ ...prev, player: prev.player + earnedPts }));
 
       if (currentQuestionIndex >= 14) {
-        // Về đích 15 câu
         confetti({ particleCount: 100, spread: 80, origin: { y: 0.5 } });
         endGame(true, 'Xuất sắc chinh phục đỉnh cao 15 câu hỏi!');
       } else {
@@ -198,20 +289,19 @@ export function MillionaireGame({
 
     const correct = currentQuestion.correct;
     const wrongIndices = [0, 1, 2, 3].filter((i) => i !== correct);
-    // Chọn 2 phương án sai để ẩn
-    const hide = wrongIndices.slice(0, 2);
-    setHiddenOptions(hide);
+    const toHide = wrongIndices.sort(() => Math.random() - 0.5).slice(0, 2);
+
+    setHiddenOptions(toHide);
     setLifelines((prev) => ({ ...prev, fiftyFifty: false }));
   };
 
-  // Trợ giúp 2: Trợ lý Gemini Gợi Ý
+  // Trợ giúp 2: Gemini Cố Vấn
   const useGeminiHint = () => {
     if (!lifelines.geminiHint || isAnswered) return;
-    sound.playTing();
+    sound.playClick();
 
-    const correctLetter = ['A', 'B', 'C', 'D'][currentQuestion.correct];
-    const hint = `🤖 Trợ lý Gemini: "Tôi tự tin 85% đáp án chính là ${correctLetter}. ${currentQuestion.explanation || ''}"`;
-    setGeminiHintText(hint);
+    const hint = currentQuestion.explanation || 'Hãy chú ý đến các từ khóa đặc trưng trong câu hỏi!';
+    setGeminiHintText(`🤖 MC Lại Văn Sâm tư vấn: "${hint}"`);
     setLifelines((prev) => ({ ...prev, geminiHint: false }));
   };
 
@@ -223,123 +313,155 @@ export function MillionaireGame({
     loadNextQuestion(currentQuestionIndex);
   };
 
-  const endGame = (isWon, reason) => {
+  // Kết thúc ván chơi
+  const endGame = (isWin, message) => {
     setIsGameOver(true);
-    if (isWon) {
-      if (onRewardWon) onRewardWon(150, 3);
-    } else {
-      if (onRewardWon && currentQuestionIndex >= 5) onRewardWon(50, 1);
+    setGameResultMsg(message);
+
+    if (isWin && !rewardClaimed && onRewardWon) {
+      setRewardClaimed(true);
+      onRewardWon(150, 3);
     }
   };
 
-  const restartGame = () => {
+  // Chơi lại từ đầu
+  const handleRestart = () => {
     sound.playClick();
     setCurrentQuestionIndex(0);
     setIsGameOver(false);
-    setSelectedOption(null);
-    setIsAnswered(false);
-    setLifelines({ fiftyFifty: true, geminiHint: true, changeQuestion: true });
-    setScores({ player: 0, bot: 0 });
+    setGameResultMsg('');
+    setRewardClaimed(false);
+    setScores({ player: 0, opponent: 0 });
+    setLifelines({
+      fiftyFifty: true,
+      geminiHint: true,
+      changeQuestion: true,
+    });
     loadNextQuestion(0);
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between p-2.5 sm:p-3 select-none font-jakarta max-w-[430px] mx-auto w-full h-full overflow-hidden text-slate-800">
-      {/* 1. Header: Thang giải thưởng & Đồng hồ đếm lùi */}
+    <div className="flex-1 flex flex-col justify-between p-2 select-none font-jakarta max-w-[430px] mx-auto w-full h-full overflow-hidden text-slate-800">
+      {/* 1. THANH CÔNG CỤ ONLINE P2P / BOT */}
+      <OnlineRoomToolbar
+        isOnlineMode={isOnlineMode}
+        onToggleMode={(mode) => {
+          setIsOnlineMode(mode);
+          handleRestart();
+        }}
+        roomCode={roomCode}
+        isHost={myRole === 'X'}
+        myRole={myRole}
+        connectedPlayer={connectedPlayer}
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        onLeaveRoom={handleLeaveRoom}
+      />
+
+      {/* 2. HEADER: TIẾN TRÌNH & ĐỒNG HỒ */}
       <div className="bg-white/95 p-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0 flex items-center justify-between gap-2">
-        {/* Câu số & Mốc thưởng */}
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-purple-600 text-white font-fredoka font-black flex items-center justify-center text-xs shadow-xs">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-500 text-black flex items-center justify-center font-fredoka font-black text-sm shadow-xs">
             {currentQuestionIndex + 1}
           </div>
           <div className="leading-tight">
-            <span className="font-fredoka font-black text-xs text-purple-950 block">
-              CÂU {currentQuestionIndex + 1} / 15
+            <span className="font-fredoka font-black text-xs text-amber-950 block">
+              AI LÀ TRIỆU PHÚ
             </span>
-            <span className="text-[10px] font-fredoka font-bold text-amber-700">
-              Thưởng: {PRIZE_LADDER[currentQuestionIndex]}
+            <span className="text-[10px] text-slate-500">
+              Mốc: {PRIZE_LADDER[currentQuestionIndex]}
             </span>
           </div>
         </div>
 
-        {/* Đồng hồ đếm lùi 15s */}
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-50 border border-amber-300">
-          <Clock className={`w-3.5 h-3.5 ${timeLeft <= 5 ? 'text-rose-500 animate-spin' : 'text-amber-600'}`} />
+        {/* Đồng hồ 15s */}
+        <div className="flex items-center gap-1 px-3 py-1 rounded-xl bg-amber-50 border border-amber-300">
+          <Clock className={`w-3.5 h-3.5 ${timeLeft <= 5 ? 'text-rose-600 animate-spin' : 'text-amber-600'}`} />
           <span className={`font-mono font-black text-sm ${timeLeft <= 5 ? 'text-rose-600 animate-pulse' : 'text-amber-950'}`}>
             {timeLeft}s
           </span>
         </div>
 
-        {/* 3 Nút Quyền Trợ Giúp */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={useFiftyFifty}
-            disabled={!lifelines.fiftyFifty || isAnswered}
-            className={`px-1.5 py-1 rounded-lg text-[10px] font-fredoka font-black border transition active:scale-90 ${
-              lifelines.fiftyFifty && !isAnswered
-                ? 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
-                : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-            }`}
-            title="50:50 - Loại 2 phương án sai"
-          >
-            50:50
-          </button>
-
-          <button
-            onClick={useGeminiHint}
-            disabled={!lifelines.geminiHint || isAnswered}
-            className={`p-1 rounded-lg text-xs font-black border transition active:scale-90 ${
-              lifelines.geminiHint && !isAnswered
-                ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
-                : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-            }`}
-            title="Hỏi Trợ Lý Gemini AI"
-          >
-            🤖
-          </button>
-
-          <button
-            onClick={useChangeQuestion}
-            disabled={!lifelines.changeQuestion || isAnswered}
-            className={`p-1 rounded-lg text-xs font-black border transition active:scale-90 ${
-              lifelines.changeQuestion && !isAnswered
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
-                : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-            }`}
-            title="Đổi Câu Hỏi Mới"
-          >
-            🔄
-          </button>
-        </div>
+        <button
+          onClick={handleRestart}
+          title="Chơi lại ván mới"
+          className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition active:scale-90"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      {/* Lời gợi ý của Gemini nếu được bật */}
+      {/* 3. 3 QUYỀN TRỢ GIÚP */}
+      <div className="grid grid-cols-3 gap-2 my-2 shrink-0">
+        <button
+          onClick={useFiftyFifty}
+          disabled={!lifelines.fiftyFifty || isAnswered || isGameOver}
+          className={`py-1.5 px-2 rounded-xl text-xs font-fredoka font-bold border transition flex items-center justify-center gap-1 active:scale-95 ${
+            lifelines.fiftyFifty
+              ? 'bg-amber-100 border-amber-300 text-amber-950 hover:bg-amber-200 shadow-2xs'
+              : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+          }`}
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+          <span>50 : 50</span>
+        </button>
+
+        <button
+          onClick={useGeminiHint}
+          disabled={!lifelines.geminiHint || isAnswered || isGameOver}
+          className={`py-1.5 px-2 rounded-xl text-xs font-fredoka font-bold border transition flex items-center justify-center gap-1 active:scale-95 ${
+            lifelines.geminiHint
+              ? 'bg-purple-100 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs'
+              : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+          }`}
+        >
+          <Zap className="w-3.5 h-3.5 text-purple-600" />
+          <span>MC Gemini</span>
+        </button>
+
+        <button
+          onClick={useChangeQuestion}
+          disabled={!lifelines.changeQuestion || isAnswered || isGameOver}
+          className={`py-1.5 px-2 rounded-xl text-xs font-fredoka font-bold border transition flex items-center justify-center gap-1 active:scale-95 ${
+            lifelines.changeQuestion
+              ? 'bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200 shadow-2xs'
+              : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+          }`}
+        >
+          <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Đổi Câu</span>
+        </button>
+      </div>
+
+      {/* GỢI Ý TỪ CỐ VẤN */}
       {geminiHintText && (
-        <div className="my-1 p-2 rounded-xl bg-purple-50 border border-purple-300 text-xs font-fredoka text-purple-950 animate-in fade-in leading-snug">
+        <div className="mb-2 p-2 rounded-xl bg-purple-50 border border-purple-300 text-xs font-fredoka text-purple-900 shadow-2xs animate-in fade-in-50">
           {geminiHintText}
         </div>
       )}
 
-      {/* 2. KHU VỰC CÂU HỎI TRUNG TÂM */}
-      <div className="flex-1 flex flex-col justify-center my-auto py-2">
-        <div className="p-4 bg-gradient-to-tr from-slate-900 via-indigo-950 to-slate-900 border-2 border-amber-400 rounded-3xl shadow-xl text-center relative overflow-hidden">
-          <div className="absolute top-2 left-3 text-[10px] font-fredoka font-bold text-amber-400 flex items-center gap-1">
-            <Sparkles className="w-3 h-3" />
-            {currentQuestion.topic || 'Ẩm thực & Tri thức'}
-          </div>
-
-          <p className="font-fredoka font-black text-sm sm:text-base text-white mt-4 leading-relaxed min-h-[48px] flex items-center justify-center">
-            {isLoadingGemini ? 'Đang tạo câu hỏi mới từ Gemini AI...' : currentQuestion.question}
-          </p>
+      {/* 4. KHU VỰC CÂU HỎI VÀ 4 PHƯƠNG ÁN */}
+      <div className="flex-1 flex flex-col justify-center overflow-y-auto my-1">
+        {/* Câu hỏi */}
+        <div className="bg-white/95 p-3.5 rounded-2xl border-2 border-amber-300 shadow-2xs mb-3 text-center">
+          {isLoadingGemini ? (
+            <div className="flex items-center justify-center gap-2 py-4 text-xs font-fredoka text-amber-800">
+              <span className="animate-spin">⏳</span>
+              <span>Đang kết nối Gemini AI lấy câu hỏi thú vị...</span>
+            </div>
+          ) : (
+            <p className="font-fredoka font-black text-sm text-amber-950 leading-relaxed">
+              {currentQuestion.question}
+            </p>
+          )}
         </div>
 
-        {/* 4 PHƯƠNG ÁN LỰA CHỌN A, B, C, D */}
-        <div className="grid grid-cols-1 gap-2 mt-3">
+        {/* 4 Phương án A, B, C, D */}
+        <div className="grid grid-cols-1 gap-2">
           {currentQuestion.options.map((opt, idx) => {
-            const letter = ['A', 'B', 'C', 'D'][idx];
+            const isHidden = hiddenOptions.includes(idx);
             const isSelected = selectedOption === idx;
             const isCorrect = idx === currentQuestion.correct;
-            const isHidden = hiddenOptions.includes(idx);
 
             let btnStyle = 'bg-white hover:bg-amber-50 border-amber-200 text-slate-800';
 
@@ -350,73 +472,42 @@ export function MillionaireGame({
                 btnStyle = 'bg-rose-500 text-white border-rose-600';
               }
             } else if (isSelected) {
-              btnStyle = 'bg-amber-400 text-black border-amber-500';
-            }
-
-            if (isHidden) {
-              return (
-                <div
-                  key={idx}
-                  className="p-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 opacity-40 text-center text-xs text-slate-400"
-                >
-                  (Đã loại bỏ bởi 50:50)
-                </div>
-              );
+              btnStyle = 'bg-amber-300 border-amber-400 text-black';
             }
 
             return (
               <button
                 key={idx}
                 onClick={() => handleSelectOption(idx)}
-                disabled={isAnswered || isGameOver || isLoadingGemini}
-                className={`w-full p-2.5 sm:p-3 rounded-2xl border-2 font-fredoka font-black text-xs sm:text-sm text-left flex items-center gap-3 transition-all active:scale-98 shadow-2xs ${btnStyle}`}
+                disabled={isAnswered || isGameOver || isHidden}
+                className={`w-full p-2.5 rounded-xl border-2 font-fredoka font-bold text-xs flex items-center justify-between transition-all active:scale-98 shadow-2xs ${btnStyle} ${
+                  isHidden ? 'opacity-20 cursor-not-allowed pointer-events-none' : ''
+                }`}
               >
-                <span className="w-6 h-6 rounded-lg bg-black/10 flex items-center justify-center text-xs shrink-0">
-                  {letter}
-                </span>
-                <span className="flex-1 leading-snug">{opt}</span>
+                <div className="flex items-center gap-2 text-left">
+                  <span className="w-5 h-5 rounded-lg bg-black/10 flex items-center justify-center font-black text-[10px] shrink-0">
+                    {['A', 'B', 'C', 'D'][idx]}
+                  </span>
+                  <span>{opt}</span>
+                </div>
+
+                {isAnswered && isCorrect && <CheckCircle2 className="w-4 h-4 text-white shrink-0" />}
+                {isAnswered && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-white shrink-0" />}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 3. Footer: Điểm số & Trợ chiến */}
-      <div className="bg-white/95 p-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0 flex items-center justify-between text-xs">
-        <span className="font-fredoka font-bold text-amber-900">
-          Điểm hiện tại: <strong className="text-amber-600 font-black">{scores.player} pts</strong>
-        </span>
-        <button
-          onClick={restartGame}
-          className="px-2.5 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-fredoka font-bold text-xs border border-amber-300"
-        >
-          Chơi Lại 🔄
-        </button>
-      </div>
-
-      {/* MODAL KẾT THÚC VÁN ĐẤU */}
+      {/* 5. MODAL GAME OVER */}
       {isGameOver && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="w-full max-w-[340px] bg-[#FFFDF9] border-4 border-amber-400 rounded-3xl p-5 text-center shadow-2xl animate-in zoom-in-95">
-            <span className="text-4xl">🏆</span>
-            <h2 className="font-fredoka font-black text-lg text-amber-950 mt-2">
-              KẾT THÚC CHẶNG ĐUA!
-            </h2>
-            <p className="text-xs text-slate-600 mt-1">
-              Bạn đã dừng lại ở <strong>Câu {currentQuestionIndex + 1}</strong>.
-              <br />
-              Phần thưởng bảo toàn: <strong className="text-amber-800">{PRIZE_LADDER[Math.max(0, currentQuestionIndex - 1)]}</strong>!
-            </p>
-            <p className="text-[11px] text-emerald-800 font-bold mt-2">
-              +100 Xu & 1 Túi Quà Trợ Chiến cho Bé Cưng! 🎁
-            </p>
-            <button
-              onClick={restartGame}
-              className="mt-4 w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-black font-fredoka font-black text-xs border border-amber-500 shadow-sm"
-            >
-              Chơi Lại Chinh Phục 15 Câu 🚀
-            </button>
-          </div>
+        <div className="mt-2 p-2.5 bg-gradient-to-r from-amber-100 to-orange-100 border border-amber-400 rounded-2xl text-center shadow-xs animate-in zoom-in-95">
+          <span className="font-fredoka font-black text-xs text-amber-950 block">
+            {gameResultMsg}
+          </span>
+          <span className="text-[10px] text-amber-800 block mt-0.5">
+            Điểm số: {scores.player} điểm • Thưởng: {PRIZE_LADDER[Math.max(0, currentQuestionIndex - 1)]}
+          </span>
         </div>
       )}
     </div>
