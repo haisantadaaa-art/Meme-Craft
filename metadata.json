@@ -1,0 +1,6 @@
+{
+  "name": "Meme Craft: Siêu Cấp Vô Tri",
+  "description": "Web game Infinite Meme ghép thẻ bài trực quan với phong cách Y2K Pop Art và trí tuệ nhân tạo Gemini",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
