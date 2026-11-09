@@ -291,6 +291,52 @@ export function SchulteTableGame({
     setConnectedGuest({ name: 'Chủ Phòng' });
   };
 
+  const [matchCountdown, setMatchCountdown] = useState(null);
+  const [isSearchingMatch, setIsSearchingMatch] = useState(false);
+
+  const handleQuickMatch = async () => {
+    setIsSearchingMatch(true);
+    sound.playClick();
+    setIsOnlineMode(true);
+
+    const newSeed = Date.now();
+    const session = new GameRoomSession(
+      'schulte',
+      { uid: 'player_' + Date.now(), displayName: playerName, avatar: '🍊' },
+      (gameState) => {
+        if (gameState.gridSeed && gameState.gridSeed !== gridSeed) {
+          setGridSeed(gameState.gridSeed);
+          setGrid(generateSeededSchulteGrid(gameState.maxCount || maxCount, gameState.gridSeed));
+        }
+        if (typeof gameState.targetNumber === 'number') setTargetNumber(gameState.targetNumber);
+        if (gameState.claimedTiles) setClaimedTiles(gameState.claimedTiles);
+        if (gameState.scores) setScores(gameState.scores);
+        if (gameState.isGameOver) setIsGameOver(true);
+      },
+      (guest) => setConnectedGuest(guest),
+      () => setConnectedGuest(null)
+    );
+
+    sessionRef.current = session;
+
+    const res = await session.quickMatch(
+      {
+        gridSeed: newSeed,
+        maxCount,
+        targetNumber: 1,
+        scores: { p1: 0, p2: 0 },
+        claimedTiles: {},
+        isGameOver: false,
+      },
+      (cd) => setMatchCountdown(cd)
+    );
+
+    setIsSearchingMatch(false);
+    setRoomCode(res.roomCode);
+    setMyRole(res.isHost ? 'p1' : 'p2');
+    initGame(maxCount, newSeed);
+  };
+
   const handleLeaveOnlineRoom = () => {
     if (sessionRef.current) {
       sessionRef.current.leaveRoom();
@@ -306,6 +352,7 @@ export function SchulteTableGame({
     <div className="flex-1 flex flex-col justify-between p-2 select-none font-jakarta max-w-[430px] mx-auto w-full h-full overflow-hidden text-slate-800">
       {/* 1. THANH CHỌN CHẾ ĐỘ: BOT vs ONLINE 2 NGƯỜI */}
       <OnlineRoomToolbar
+        gameType="schulte"
         isOnlineMode={isOnlineMode}
         onToggleMode={(online) => {
           setIsOnlineMode(online);
@@ -316,7 +363,10 @@ export function SchulteTableGame({
         isHost={myRole === 'p1'}
         myRole={myRole}
         connectedPlayer={connectedGuest}
+        matchCountdown={matchCountdown}
+        isSearchingMatch={isSearchingMatch}
         onCreateRoom={handleCreateOnlineRoom}
+        onQuickMatch={handleQuickMatch}
         onJoinRoom={handleJoinOnlineRoom}
         onLeaveRoom={handleLeaveOnlineRoom}
       />

@@ -1,7 +1,7 @@
 /**
  * Universal Multiplayer Module (P2P via Firebase Realtime Database & BroadcastChannel)
  * Cung cấp cơ chế tạo phòng, vào phòng bằng mã 6 ký tự (VD: TT-9921),
- * đồng bộ trạng thái ván đấu tức thời (< 0.1s), ping xanh và thông tin người chơi.
+ * Tìm trận nhanh (Quick Match), Mời bạn 1 chạm, và đồng bộ trạng thái ván đấu.
  */
 
 import { db, ref, set, update, onValue, get } from '../services/firebase';
@@ -12,9 +12,16 @@ export function generateRoomCode(prefix = 'TT') {
   return `${prefix}-${num}`;
 }
 
+// Tạo link mời bạn bè 1-chạm
+export function generateInviteLink(gameType, roomCode) {
+  if (typeof window === 'undefined') return '';
+  const origin = window.location.origin;
+  return `${origin}/?joinGame=${gameType.toLowerCase()}&room=${roomCode}`;
+}
+
 export class GameRoomSession {
-  constructor(gameType, user, onStateUpdate, onPlayerJoined, onPlayerLeft) {
-    this.gameType = gameType; // 'schulte' | 'wordchain' | 'millionaire' | 'monopoly' | 'caro' | 'go' | 'xiangqi'
+  constructor(gameType, user, onStateUpdate, onPlayerJoined, onPlayerLeft, onChat) {
+    this.gameType = gameType; // 'schulte' | 'wordchain' | 'millionaire' | 'monopoly' | 'caro' | 'go' | 'xiangqi' | 'tapwar' | 'slingpuck'
     this.user = user || { uid: 'guest_' + Date.now(), displayName: 'Người Chơi', avatar: '🍊' };
     this.roomCode = null;
     this.isHost = false;
@@ -22,13 +29,16 @@ export class GameRoomSession {
     this.onStateUpdate = onStateUpdate;
     this.onPlayerJoined = onPlayerJoined;
     this.onPlayerLeft = onPlayerLeft;
+    this.onChat = onChat;
     this.unsub = null;
+    this.chatUnsub = null;
     this.bc = null; // BroadcastChannel fallback cho multi-tab testing
   }
 
   // 1. TẠO PHÒNG MỚI (HOST)
   async createRoom(initialGameState = {}) {
-    this.roomCode = generateRoomCode(this.gameType.slice(0, 2).toUpperCase());
+    const prefix = (this.gameType.slice(0, 2) || 'TT').toUpperCase();
+    this.roomCode = generateRoomCode(prefix);
     this.isHost = true;
     this.myRole = 'p1';
 
@@ -93,9 +103,60 @@ export class GameRoomSession {
       return true;
     } catch (err) {
       console.warn('Firebase join room failed:', err);
-      // Thử BroadcastChannel
       this._setupBroadcastChannel();
       return true;
+    }
+  }
+
+  // 3. TÌM TRẬN NHANH (QUICK MATCH)
+  async quickMatch(initialGameState = {}, onCountDown = null) {
+    try {
+      // Quét các phòng đang chờ cùng loại game
+      const snapshot = await get(ref(db, 'minigame_rooms'));
+      let targetCode = null;
+
+      if (snapshot.exists()) {
+        const rooms = snapshot.val();
+        const now = Date.now();
+
+        // Tìm phòng đang 'waiting', cùng loại game, không phải do chính mình tạo, hoạt động trong vòng 2 phút
+        for (const [code, r] of Object.entries(rooms)) {
+          if (
+            r &&
+            r.gameType === this.gameType &&
+            r.status === 'waiting' &&
+            r.host &&
+            r.host.id !== this.user.uid &&
+            (!r.ping || now - r.ping < 120000)
+          ) {
+            targetCode = code;
+            break;
+          }
+        }
+      }
+
+      // Nếu tìm thấy phòng rảnh -> Vào ngay!
+      if (targetCode) {
+        await this.joinRoom(targetCode);
+
+        // Khởi động đếm ngược 3s
+        if (onCountDown) {
+          onCountDown(3);
+          setTimeout(() => onCountDown(2), 1000);
+          setTimeout(() => onCountDown(1), 2000);
+          setTimeout(() => onCountDown(0), 3000);
+        }
+
+        return { matched: true, roomCode: targetCode, isHost: false };
+      }
+
+      // Nếu chưa có phòng rảnh -> Tự tạo phòng mở
+      const newCode = await this.createRoom(initialGameState);
+      return { matched: false, roomCode: newCode, isHost: true };
+    } catch (e) {
+      console.warn('Quick Match fallback:', e);
+      const code = await this.createRoom(initialGameState);
+      return { matched: false, roomCode: code, isHost: true };
     }
   }
 
@@ -119,8 +180,36 @@ export class GameRoomSession {
         if (!val.guest && this.onPlayerLeft) {
           this.onPlayerLeft();
         }
+
+        // Lắng nghe reaction / tin nhắn chat mới
+        if (val.lastChat && this.onChat) {
+          this.onChat(val.lastChat);
+        }
       }
     });
+  }
+
+  // Gửi tin nhắn / reaction vào phòng
+  async sendChat(content, type = 'text') {
+    if (!this.roomCode) return;
+    const chatPayload = {
+      content,
+      type, // 'text' | 'emoji' | 'quick'
+      sender: this.myRole,
+      senderName: this.user.displayName || 'Người Chơi',
+      senderAvatar: this.user.avatar || '🍊',
+      timestamp: Date.now(),
+    };
+
+    try {
+      await update(ref(db, `minigame_rooms/${this.roomCode}`), {
+        lastChat: chatPayload,
+      });
+    } catch (e) {
+      if (this.bc) {
+        this.bc.postMessage({ type: 'CHAT_MESSAGE', data: chatPayload });
+      }
+    }
   }
 
   // Fallback BroadcastChannel cho cùng trình duyệt / multi-tabs
@@ -133,6 +222,9 @@ export class GameRoomSession {
           if (type === 'STATE_UPDATE' && this.onStateUpdate) {
             this.onStateUpdate(data);
           }
+          if (type === 'CHAT_MESSAGE' && this.onChat) {
+            this.onChat(data);
+          }
         };
       }
     } catch (e) {
@@ -140,7 +232,7 @@ export class GameRoomSession {
     }
   }
 
-  // 3. GỬI NƯỚC ĐI / CẬP NHẬT TRẠNG THÁI (REALTIME SEND)
+  // 4. GỬI NƯỚC ĐI / CẬP NHẬT TRẠNG THÁI (REALTIME SEND)
   async syncGameState(updatedState, actionMeta = {}) {
     if (!this.roomCode) return;
 
@@ -155,14 +247,13 @@ export class GameRoomSession {
         ping: Date.now(),
       });
     } catch (e) {
-      // Fallback
       if (this.bc) {
         this.bc.postMessage({ type: 'STATE_UPDATE', data: updatedState });
       }
     }
   }
 
-  // 4. RỜI PHÒNG / ĐÓNG KẾT NỐI
+  // 5. RỜI PHÒNG / ĐÓNG KẾT NỐI
   async leaveRoom() {
     if (this.unsub) {
       this.unsub();

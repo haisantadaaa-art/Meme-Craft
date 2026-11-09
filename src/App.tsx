@@ -16,6 +16,9 @@ import { XiangqiGame } from './components/games/XiangqiGame';
 import { GoGame } from './components/games/GoGame';
 import { SchulteGame } from './components/games/SchulteGame';
 import { MonopolyGame } from './components/games/MonopolyGame';
+import { TapWarGame } from './components/games/TapWarGame';
+import { SlingPuckGame } from './components/games/SlingPuckGame';
+import { FloatingChatFAB } from './components/FloatingChatFAB';
 import { PetCheerleaderWidget } from './components/PetCheerleaderWidget';
 import { AuthModal } from './components/AuthModal';
 import { FriendsModal } from './components/FriendsModal';
@@ -37,7 +40,9 @@ type GameView =
   | 'MILLIONAIRE_GAME'
   | 'BAU_CUA_GAME'
   | 'SCHULTE_GAME'
-  | 'MONOPOLY_GAME';
+  | 'MONOPOLY_GAME'
+  | 'TAP_WAR_GAME'
+  | 'SLING_PUCK_GAME';
 
 function MainApp() {
   const { user, addCoins, addFertilizers, addExp } = (useAuth() || {}) as any;
@@ -50,6 +55,41 @@ function MainApp() {
   const [isBotGame, setIsBotGame] = useState<boolean>(true);
   const [myRole, setMyRole] = useState<'X' | 'O'>('X');
   const [roomData, setRoomData] = useState<any>(null);
+
+  // 1-Chạm Mời Bạn Bè: Tự động vào phòng khi mở qua link chia sẻ
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const joinGame = params.get('joinGame')?.toLowerCase();
+      const room = params.get('room');
+
+      if (joinGame && room) {
+        const gameMap: Record<string, GameView> = {
+          xiangqi: 'XIANGQI_GAME',
+          caro: 'CARO_GAME',
+          go: 'GO_GAME',
+          wordchain: 'WORD_CHAIN_GAME',
+          millionaire: 'MILLIONAIRE_GAME',
+          schulte: 'SCHULTE_GAME',
+          monopoly: 'MONOPOLY_GAME',
+          tapwar: 'TAP_WAR_GAME',
+          slingpuck: 'SLING_PUCK_GAME',
+        };
+
+        const target = gameMap[joinGame];
+        if (target) {
+          setActiveRoomCode(room);
+          setIsBotGame(false);
+          setMyRole('O');
+          setCurrentView(target);
+          sound.playTing();
+        }
+      }
+    } catch (e) {
+      console.warn('Lỗi đọc tham số URL mời bạn:', e);
+    }
+  }, []);
 
   // Lắng nghe dữ liệu phòng realtime từ Firebase nếu đang trong phòng online
   useEffect(() => {
@@ -104,6 +144,10 @@ function MainApp() {
       setCurrentView('SCHULTE_GAME');
     } else if (type === 'MONOPOLY') {
       setCurrentView('MONOPOLY_GAME');
+    } else if (type === 'TAP_WAR') {
+      setCurrentView('TAP_WAR_GAME');
+    } else if (type === 'SLING_PUCK') {
+      setCurrentView('SLING_PUCK_GAME');
     } else {
       setCurrentView('XIANGQI_GAME');
     }
@@ -293,7 +337,36 @@ function MainApp() {
                     onExit={() => setCurrentView('COZY_PET')}
                   />
                 )}
+
+                {currentView === 'TAP_WAR_GAME' && (
+                  <TapWarGame
+                    roomData={roomData}
+                    roomCode={activeRoomCode}
+                    myRole={myRole === 'X' ? 'p1' : 'p2'}
+                    isBotMode={isBotGame}
+                    playerName={user?.displayName || 'Chiến Binh'}
+                    onRewardWon={handleRewardWon}
+                    onExit={() => setCurrentView('COZY_PET')}
+                  />
+                )}
+
+                {currentView === 'SLING_PUCK_GAME' && (
+                  <SlingPuckGame
+                    roomData={roomData}
+                    roomCode={activeRoomCode}
+                    myRole={myRole === 'X' ? 'p1' : 'p2'}
+                    isBotMode={isBotGame}
+                    playerName={user?.displayName || 'Xạ Thủ'}
+                    onRewardWon={handleRewardWon}
+                    onExit={() => setCurrentView('COZY_PET')}
+                  />
+                )}
               </div>
+
+              {/* Khung Chat & Emoji Động Nổi Trong Minigame Online */}
+              {!isBotGame && activeRoomCode && (
+                <FloatingChatFAB roomPin={activeRoomCode} isBotMode={false} />
+              )}
             </div>
           )}
         </main>

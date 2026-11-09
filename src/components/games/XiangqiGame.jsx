@@ -248,13 +248,15 @@ function countObstacles(board, r1, c1, r2, c2) {
 }
 
 // Component vẽ dấu đánh dấu chữ thập góc tại các vị trí Pháo và Tốt
-function XiangqiCrossMarker({ r, c }) {
-  const cx = 20 + c * 40;
-  const cy = 20 + r * 40;
+function XiangqiCrossMarker({ r, c, isFlipped = false }) {
+  const visualR = isFlipped ? 9 - r : r;
+  const visualC = isFlipped ? 8 - c : c;
+  const cx = 20 + visualC * 40;
+  const cy = 20 + visualR * 40;
   const d = 3.5;
   const s = 6;
-  const hasLeft = c > 0;
-  const hasRight = c < 8;
+  const hasLeft = visualC > 0;
+  const hasRight = visualC < 8;
 
   return (
     <g stroke="#68340A" strokeWidth="1.2" fill="none">
@@ -310,6 +312,20 @@ function XiangqiGameCore({
   const [isOpponentDisconnected, setIsOpponentDisconnected] = useState(false);
   const [opponentName, setOpponentName] = useState('Đối thủ');
   const actualBotMode = isBotMode || isLocalBotMode;
+
+  // Tự động lật góc nhìn bàn cờ theo người chơi (POV FLIP)
+  // Quân của người chơi luôn nằm ở nửa dưới màn hình! Người cầm quân Đen (b) sẽ thấy quân mình ở đáy
+  const defaultFlip = !actualBotMode && myRole === 'b';
+  const [manualFlip, setManualFlip] = useState(null);
+  const isFlipped = manualFlip !== null ? manualFlip : defaultFlip;
+
+  const getVisualCoord = useCallback(
+    (r, c) => ({
+      r: isFlipped ? 9 - r : r,
+      c: isFlipped ? 8 - c : c,
+    }),
+    [isFlipped]
+  );
 
   // Thiết lập onDisconnect khi vào phòng online
   useEffect(() => {
@@ -727,6 +743,14 @@ function XiangqiGameCore({
           </div>
 
           <button
+            onClick={() => setManualFlip((prev) => (prev !== null ? !prev : !defaultFlip))}
+            title="Đảo góc nhìn bàn cờ"
+            className="px-2 py-1.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 active:scale-95 transition flex items-center gap-1 text-[10px] font-fredoka font-black"
+          >
+            <span>🔄 {isFlipped ? 'Góc Đen' : 'Góc Đỏ'}</span>
+          </button>
+
+          <button
             onClick={handleReset}
             title="Ván Mới"
             className="p-2 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 active:scale-95 transition"
@@ -846,14 +870,22 @@ function XiangqiGameCore({
 
           {/* Dấu Vạch Chữ Thập (Cross Markers) tại Pháo và Tốt */}
           {MARKER_POSITIONS.map((pos, i) => (
-            <XiangqiCrossMarker key={`marker-${i}`} r={pos.r} c={pos.c} />
+            <XiangqiCrossMarker key={`marker-${i}`} r={pos.r} c={pos.c} isFlipped={isFlipped} />
           ))}
 
           {/* Vạch đánh dấu nước đi vừa thực hiện (Last move highlight) */}
           {lastMove && (
             <g stroke="#EAB308" strokeWidth="2" strokeDasharray="3,3" fill="none">
-              <circle cx={20 + lastMove.from.c * 40} cy={20 + lastMove.from.r * 40} r="16" />
-              <circle cx={20 + lastMove.to.c * 40} cy={20 + lastMove.to.r * 40} r="16" />
+              <circle
+                cx={20 + getVisualCoord(lastMove.from.r, lastMove.from.c).c * 40}
+                cy={20 + getVisualCoord(lastMove.from.r, lastMove.from.c).r * 40}
+                r="16"
+              />
+              <circle
+                cx={20 + getVisualCoord(lastMove.to.r, lastMove.to.c).c * 40}
+                cy={20 + getVisualCoord(lastMove.to.r, lastMove.to.c).r * 40}
+                r="16"
+              />
             </g>
           )}
         </svg>
@@ -867,9 +899,10 @@ function XiangqiGameCore({
                 const canMoveTarget =
                   selectedPos && isValidMove(board, selectedPos.r, selectedPos.c, r, c, turn);
 
-                // Tọa độ phần trăm tim giao điểm chuẩn xác 100%
-                const leftPercent = ((20 + c * 40) / 360) * 100;
-                const topPercent = ((20 + r * 40) / 400) * 100;
+                // Tọa độ phần trăm tim giao điểm chuẩn xác theo góc nhìn người chơi (POV)
+                const visual = getVisualCoord(r, c);
+                const leftPercent = ((20 + visual.c * 40) / 360) * 100;
+                const topPercent = ((20 + visual.r * 40) / 400) * 100;
 
                 return (
                   <button
