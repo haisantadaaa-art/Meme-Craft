@@ -85,12 +85,32 @@ export const LOBBY_MINIGAMES = [
     gradient: 'from-rose-500 to-red-600',
   },
   {
+    id: 'RPS',
+    name: 'Oánh Tù Tì Sinh Tử',
+    subtitle: 'BO5 Búa Kéo Bao ✊✌️🖐️',
+    icon: '✊✌️',
+    desc: 'Đấu 5 ván thắng 3, 5s chọn bí mật rồi lật bài đập tay bùng nổ. Tích nộ tung chiêu Tất Sát bạo kích!',
+    badge: 'MỚI PVP 💥',
+    badgeColor: 'bg-gradient-to-r from-rose-500 to-orange-500 text-white font-black animate-pulse',
+    gradient: 'from-rose-500 to-amber-600',
+  },
+  {
+    id: 'REFLEX',
+    name: 'Đua Bấm Đèn Tốc Độ',
+    subtitle: 'Đèn Xanh Đập Nút ms 🚦⚡',
+    icon: '🚦⚡',
+    desc: 'Đèn đỏ chờ... ngẫu nhiên chuyển sang Đèn Xanh đập nút tính mili-giây! Bấm trước là phạm quy phạt thua.',
+    badge: 'MỚI PVP ⚡',
+    badgeColor: 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-black',
+    gradient: 'from-emerald-500 to-teal-600',
+  },
+  {
     id: 'TAP_WAR',
     name: 'Đại Chiến Bấm Tốc Độ',
     subtitle: '2P Capybara Kéo Co 🦫⚡',
     icon: '🦫⚡',
     desc: 'Bấm ngón tay cực nhanh đẩy dây thừng Capybara sang sân đối thủ. Chơi 2P chung máy hoặc Online!',
-    badge: 'MỚI 2P 💥',
+    badge: '2P ĐỐI ĐẦU 💥',
     badgeColor: 'bg-gradient-to-r from-orange-500 to-rose-500 text-white font-black',
     gradient: 'from-orange-500 to-rose-600',
   },
@@ -100,7 +120,7 @@ export const LOBBY_MINIGAMES = [
     subtitle: 'Kéo Thun Gỗ Bắn Khe 🎯🪵',
     icon: '🎯🪵',
     desc: 'Kéo dây thun đàn hồi bắn xuyên qua khe hẹp để dọn sạch quân sang sân đối thủ trước!',
-    badge: 'MỚI 2P 🎯',
+    badge: '2P BẮN BI 🎯',
     badgeColor: 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black',
     gradient: 'from-amber-600 to-orange-700',
   },
@@ -135,7 +155,7 @@ export function MinigameHub({ user, userProfile, onBackToPet, onStartGame }) {
             SẢNH ĐẤU TRÍ ONLINE
           </span>
           <span className="text-[9px] text-slate-500 font-bold">
-            9 Trò Chơi Đối Kháng ⚔️
+            11 Trò Chơi Đối Kháng ⚔️
           </span>
         </div>
 

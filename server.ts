@@ -34,21 +34,36 @@ if (apiKey) {
 // 1. Endpoint: AI Là Triệu Phú - Sinh câu hỏi vô tận theo thời gian thực
 app.post('/api/gemini/millionaire', async (req, res) => {
   try {
-    const { topic = 'Ẩm thực và văn hóa Việt Nam', level = 1 } = req.body;
+    const { topic = 'Ẩm thực và văn hóa Việt Nam', level = 1, excludedQuestions = [] } = req.body;
 
     if (!ai) {
       return res.status(503).json({ error: 'Gemini API key is not configured' });
     }
 
-    const prompt = `
-Bạn là Ban Biên Tập chương trình "Ai Là Triệu Phú" phiên bản Việt Nam cực kỳ hấp dẫn và hài hước.
-Hãy tạo 1 câu hỏi trắc nghiệm mới lạ, không trùng lặp thuộc chủ đề "${topic}", độ khó cấp độ ${level}/15.
+    const excludedSummary = Array.isArray(excludedQuestions) && excludedQuestions.length > 0
+      ? excludedQuestions.slice(-10).map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')
+      : 'Chưa có';
 
-Yêu cầu:
-- Câu hỏi rõ ràng, thú vị, mang tính giải trí và trí tuệ.
-- 4 phương án lựa chọn A, B, C, D (phương án hợp lý, có phương án đánh lừa thông minh).
-- Chỉ định rõ chỉ số đáp án đúng (correctIndex từ 0 đến 3).
-- Giải thích ngắn gọn và thú vị tại sao đáp án đó đúng (dưới 30 từ).
+    const difficultyGuide = level <= 5
+      ? 'Cực dễ, câu hỏi vui về ẩm thực đường phố, trà sữa, rau củ, trái cây quen thuộc đời sống hàng ngày.'
+      : level <= 10
+      ? 'Trung bình, kiến thức phổ thông về đặc sản vùng miền, nguồn gốc món ăn 3 miền Bắc - Trung - Nam, gia vị truyền thống, ca dao ẩm thực.'
+      : 'Hóc búa, đỉnh cao trí tuệ, câu hỏi chuyên sâu về niên đại lịch sử ra đời, nghệ thuật ẩm thực cung đình, nguyên liệu quý hiếm hoặc kỷ lục ẩm thực.';
+
+    const prompt = `
+Bạn là Ban Biên Tập chương trình "Ai Là Triệu Phú" phiên bản Việt Nam cực kỳ hấp dẫn và trí tuệ.
+Hãy tạo 1 câu hỏi trắc nghiệm mới 100%, độc đáo, TUYỆT ĐỐI KHÔNG TRÙNG LẶP hoặc lặp ý với bất kỳ câu hỏi nào trong danh sách đã xuất hiện sau đây:
+${excludedSummary}
+
+Chủ đề chính: "${topic}"
+Độ khó: Mốc ${level}/15
+Yêu cầu độ khó: ${difficultyGuide}
+
+Quy chuẩn đầu ra:
+- Câu hỏi súc tích, văn phong tiếng Việt chuẩn mực, cuốn hút.
+- 4 phương án lựa chọn A, B, C, D (phương án đúng hợp lý, 3 phương án nhiễu thông minh).
+- Chỉ định rõ correct (chỉ số đáp án đúng từ 0 đến 3).
+- Giải thích ngắn gọn và thú vị tại sao đáp án đó đúng (dưới 35 từ).
 
 Trả về định dạng JSON đúng schema:
 `;

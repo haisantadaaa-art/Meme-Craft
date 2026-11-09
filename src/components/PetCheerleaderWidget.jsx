@@ -12,7 +12,7 @@ const CHEER_MESSAGES = [
 ];
 
 export function PetCheerleaderWidget({ petId = 'capybara', lastAction = '' }) {
-  const [cheerText, setCheerText] = useState('Bé cưng đang trợ chiến! 🐾');
+  const [cheerText, setCheerText] = useState('Bé cưng đang cổ vũ! 🐾');
   const [isJumping, setIsJumping] = useState(false);
   const [hearts, setHearts] = useState([]);
 
@@ -56,10 +56,10 @@ export function PetCheerleaderWidget({ petId = 'capybara', lastAction = '' }) {
         {cheerText}
       </div>
 
-      {/* Mascot thú cưng mini nhún nhảy */}
+      {/* Mascot thú cưng mini nhún nhảy - Thuần túy cổ động viên, không can thiệp ván cờ */}
       <div
         onClick={handlePetCheer}
-        title="Bé cưng đang trợ chiến! Bấm để nhận năng lượng tích cực"
+        title="Cổ động viên hậu trường! Bấm để xem bé nhảy múa"
         className={`w-12 h-12 rounded-2xl bg-amber-100/90 border-2 border-amber-400 p-1 flex items-center justify-center cursor-pointer shadow-md transition-transform duration-300 active:scale-90 ${
           isJumping ? '-translate-y-2 scale-110' : 'hover:scale-105'
         }`}

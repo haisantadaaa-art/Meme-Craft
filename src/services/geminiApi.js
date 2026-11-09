@@ -60,7 +60,7 @@ export async function judgeWordChainWithGemini(prevWord, currentWord, playerName
   };
 }
 
-export async function fetchGeminiMillionaireQuestion(topic = 'Ẩm thực Việt Nam', questionNumber = 1) {
+export async function fetchGeminiMillionaireQuestion(topic = 'Ẩm thực Việt Nam', questionNumber = 1, excludedQuestions = []) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -68,7 +68,11 @@ export async function fetchGeminiMillionaireQuestion(topic = 'Ẩm thực Việt
     const res = await fetch('/api/gemini/millionaire', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic, questionNumber }),
+      body: JSON.stringify({
+        topic,
+        level: questionNumber,
+        excludedQuestions: Array.isArray(excludedQuestions) ? excludedQuestions : [],
+      }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -81,7 +85,8 @@ export async function fetchGeminiMillionaireQuestion(topic = 'Ẩm thực Việt
           options: data.options,
           correct: typeof data.correct === 'number' ? data.correct : 0,
           explanation: data.explanation || 'Đáp án chính xác!',
-          topic,
+          topic: data.topic || topic,
+          level: questionNumber,
         };
       }
     }

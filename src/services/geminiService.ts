@@ -82,7 +82,8 @@ export async function judgeWordChainWithGemini(
  */
 export async function fetchGeminiMillionaireQuestion(
   topic = 'Ẩm thực & Văn hóa Việt Nam',
-  level = 1
+  level = 1,
+  excludedQuestions: string[] = []
 ): Promise<MillionaireQuestion | null> {
   try {
     const controller = new AbortController();
@@ -91,7 +92,11 @@ export async function fetchGeminiMillionaireQuestion(
     const res = await fetch('/api/gemini/millionaire', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic, level }),
+      body: JSON.stringify({
+        topic,
+        level,
+        excludedQuestions: Array.isArray(excludedQuestions) ? excludedQuestions : [],
+      }),
       signal: controller.signal,
     });
     clearTimeout(timeout);

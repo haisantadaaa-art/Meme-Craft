@@ -1,98 +1,55 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { sound } from '../../utils/soundEffects';
-import { GameRoomSession } from '../../utils/multiplayerPeer';
-import { OnlineRoomToolbar } from '../OnlineRoomToolbar';
-import { fetchGeminiMillionaireQuestion } from '../../services/geminiService';
-import { Trophy, Clock, Sparkles, RotateCcw, CheckCircle2, XCircle, HelpCircle, Users, RefreshCw, Zap } from 'lucide-react';
+import { GameRoomSession } from '../../services/peerNetwork';
+import { fetchGeminiMillionaireQuestion } from '../../services/geminiApi';
+import { getTieredFallbackQuestion } from '../../data/millionaireQuestionsPool';
+import {
+  ArrowLeft,
+  RotateCcw,
+  Sparkles,
+  HelpCircle,
+  Users,
+  Flame,
+  Award,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  BrainCircuit,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-// ==========================================
-// KHO CÂU HỎI OFFLINE DỰ PHÒNG PHONG PHÚ
-// ==========================================
-export const OFFLINE_QUESTIONS = [
-  {
-    question: 'Món Phở truyền thống Việt Nam thường ăn kèm với loại rau thơm đặc trưng nào?',
-    options: ['Húng Quế & Ngò Gai', 'Lá Lốt & Tía Tô', 'Rau Má & Diếp Cá', 'Cần Tây & Thì Là'],
-    correct: 0,
-    explanation: 'Húng Quế và Ngò Gai là 2 loại rau thơm kinh điển tôn lên hương vị nước dùng phở bò.',
-  },
-  {
-    question: 'Thành phần chính tạo nên độ dai dẻo của Hạt Trân Châu trong Trà Sữa là gì?',
-    options: ['Bột Mì đa dụng', 'Bột Năng (Tinh bột sắn)', 'Bột Bắp vàng', 'Bột Gạo tẻ'],
-    correct: 1,
-    explanation: 'Bột năng khi nhào với nước sôi và luộc chín sẽ tạo độ dẻo dai đặc trưng.',
-  },
-  {
-    question: 'Món Bánh Mì kẹp Việt Nam được từ điển Oxford đưa vào danh mục từ mới năm nào?',
-    options: ['Năm 2011', 'Năm 1999', 'Năm 2005', 'Năm 2020'],
-    correct: 0,
-    explanation: 'Năm 2011, từ "Banh mi" chính thức được thêm vào từ điển Oxford mà không cần dịch.',
-  },
-  {
-    question: 'Loại gia vị nào sau đây được mệnh danh là "Vàng Đỏ" đắt đỏ nhất thế giới?',
-    options: ['Hạt Tiêu Đen', 'Nhụy Hoa Nghệ Tây (Saffron)', 'Quế Chi Rừng', 'Hoa Hồi Lạng Sơn'],
-    correct: 1,
-    explanation: 'Saffron cần hàng vạn bông hoa nghệ tây thu hoạch thủ công để tạo nên 1 kg nhụy.',
-  },
-  {
-    question: 'Cà Phê Trứng béo ngậy trứ danh là nét sáng tạo ẩm thực độc đáo khởi nguồn từ đâu?',
-    options: ['Hà Nội', 'Đà Nẵng', 'Huế', 'TP. Hồ Chí Minh'],
-    correct: 0,
-    explanation: 'Cà phê trứng ra đời tại Hà Nội vào những năm 1940 do cụ Nguyễn Văn Giảng sáng tạo.',
-  },
-  {
-    question: 'Nước mắm truyền thống Việt Nam chuẩn được ủ chượp từ 2 nguyên liệu chính nào?',
-    options: ['Cá cơm và Muối biển', 'Tôm khô và Đường phèn', 'Mực lá và Rượu gạo', 'Cua đồng và Nước dừa'],
-    correct: 0,
-    explanation: 'Nước mắm cá cơm ủ muối theo tỷ lệ 3 cá : 1 muối trong thùng gỗ từ 12-18 tháng.',
-  },
-  {
-    question: 'Món Bún Bò Huế nổi tiếng có sợi bún to hay sợi bún nhỏ truyền thống?',
-    options: ['Sợi bún to tròn', 'Sợi bún dẹt như phở', 'Sợi bún siêu mảnh', 'Sợi miến dong'],
-    correct: 0,
-    explanation: 'Bún bò Huế đặc trưng với sợi bún to tròn, ăn kèm chả cua, huyết và bắp bò.',
-  },
-  {
-    question: 'Trái Sầu Riêng được mệnh danh là gì trong thế giới trái cây nhiệt đới?',
-    options: ['Vua của các loại trái cây', 'Nữ hoàng trái cây', 'Hoàng tử ngọt ngào', 'Bá tước rừng xanh'],
-    correct: 0,
-    explanation: 'Sầu riêng được mệnh danh là Vua trái cây (King of Fruits) nhờ hương vị độc đáo nồng nàn.',
-  },
-];
-
-// Thang thưởng 15 mốc kịch tính
+// Thang thưởng 15 mốc kịch tính của Ai Là Triệu Phú
 export const PRIZE_LADDER = [
   '200k', '400k', '600k', '1.000k', '2.000k ⭐',
   '3.000k', '6.000k', '10.000k', '14.000k', '22.000k ⭐',
-  '30.000k', '40.000k', '60.000k', '85.000k', '150.000k 🏆'
+  '30.000k', '40.000k', '60.000k', '85.000k', '150.000k 🏆',
 ];
 
 export function MillionaireGame({
-  roomData = null,
-  roomCode: initialRoomCode = '',
-  myRole: initialRole = 'X',
-  isBotMode: initialBotMode = true,
+  roomCode = '',
+  myRole = 'p1',
+  isBotMode = true,
   playerName = 'Chủ Tiệm',
   onRewardWon,
   onExit,
 }) {
-  const [isOnlineMode, setIsOnlineMode] = useState(!initialBotMode);
-  const [roomCode, setRoomCode] = useState(initialRoomCode);
-  const [myRole, setMyRole] = useState(initialRole);
-  const [connectedPlayer, setConnectedPlayer] = useState(null);
-
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [currentQuestion, setCurrentQuestion] = useState(OFFLINE_QUESTIONS[0]);
+  const [currentQuestion, setCurrentQuestion] = useState(() =>
+    getTieredFallbackQuestion(1, new Set())
+  );
   const [selectedOption, setSelectedOption] = useState(null);
   const [isAnswered, setIsAnswered] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(15);
+  const [timeLeft, setTimeLeft] = useState(20);
   const [isGameOver, setIsGameOver] = useState(false);
   const [gameResultMsg, setGameResultMsg] = useState('');
   const [isLoadingGemini, setIsLoadingGemini] = useState(false);
   const [scores, setScores] = useState({ player: 0, opponent: 0 });
   const [rewardClaimed, setRewardClaimed] = useState(false);
 
-  // 3 Quyền trợ giúp
+  // Set chống trùng lặp câu hỏi triệt để trong ván đấu
+  const usedQuestionsSet = useRef(new Set());
+
+  // 3 Quyền trợ giúp kinh điển
   const [lifelines, setLifelines] = useState({
     fiftyFifty: true,
     geminiHint: true,
@@ -104,117 +61,106 @@ export function MillionaireGame({
   const sessionRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Tải câu hỏi mới từ Gemini API hoặc offline pool
+  // Hàm tải câu hỏi mới đảm bảo KHÔNG TRÙNG LẶP và ĐÚNG PHÂN TẦNG ĐỘ KHÓ
   const loadNextQuestion = useCallback(async (index) => {
     setIsLoadingGemini(true);
     setHiddenOptions([]);
     setGeminiHintText('');
     setSelectedOption(null);
     setIsAnswered(false);
-    setTimeLeft(15);
+    setTimeLeft(20);
 
-    const topics = ['Ẩm thực Việt Nam', 'Văn hóa & Lịch sử', 'Khoa học đời sống', 'Đố vui ca dao'];
+    const level = index + 1; // 1 đến 15
+    const topics = [
+      'Ẩm thực truyền thống Việt Nam',
+      'Đặc sản 3 miền Bắc Trung Nam',
+      'Văn hóa ẩm thực & Lịch sử cung đình',
+      'Món ngon đường phố & Trà sữa',
+    ];
     const randomTopic = topics[index % topics.length];
-    const geminiQ = await fetchGeminiMillionaireQuestion(randomTopic, index + 1);
 
-    if (geminiQ) {
-      setCurrentQuestion(geminiQ);
-    } else {
-      const fallbackQ = OFFLINE_QUESTIONS[index % OFFLINE_QUESTIONS.length];
-      setCurrentQuestion(fallbackQ);
-    }
+    let pickedQuestion = null;
 
-    setIsLoadingGemini(false);
-  }, []);
+    try {
+      // Gọi Gemini API kèm danh sách các câu đã dùng để loại trừ
+      const excludedArray = Array.from(usedQuestionsSet.current).slice(-10);
+      const geminiQ = await fetchGeminiMillionaireQuestion(randomTopic, level, excludedArray);
 
-  // Thiết lập phiên kết nối Online P2P
-  useEffect(() => {
-    if (!isOnlineMode) {
-      if (sessionRef.current) {
-        sessionRef.current.destroy();
-        sessionRef.current = null;
+      if (geminiQ && geminiQ.question) {
+        const cleanText = geminiQ.question.trim().toLowerCase();
+        if (!usedQuestionsSet.current.has(cleanText)) {
+          usedQuestionsSet.current.add(cleanText);
+          pickedQuestion = geminiQ;
+        }
       }
-      return;
+    } catch (e) {
+      // Ignored, fallback to tiered pool
     }
 
-    const session = new GameRoomSession({
-      gameType: 'millionaire',
-      playerName,
-      onState: (state) => {
-        if (!state) return;
-        if (state.questionIndex !== undefined) {
-          setCurrentQuestionIndex(state.questionIndex);
-        }
-        if (state.question) {
-          setCurrentQuestion(state.question);
-          setSelectedOption(null);
-          setIsAnswered(false);
-          setTimeLeft(15);
-        }
-        if (state.scores) {
-          setScores(state.scores);
-        }
-        if (state.isGameOver) {
-          setIsGameOver(true);
-          setGameResultMsg(state.resultMsg || 'Trận đấu kết thúc!');
-        }
-        if (state.p2) setConnectedPlayer(state.p2.name);
-      },
-      onPlayerJoin: (player) => {
-        setConnectedPlayer(player.name);
-        sound.playTing();
-      },
-      onPlayerLeave: () => {
-        setConnectedPlayer(null);
-      },
-    });
-
-    sessionRef.current = session;
-
-    return () => {
-      session.destroy();
-      sessionRef.current = null;
-    };
-  }, [isOnlineMode, playerName]);
-
-  // Tạo phòng online
-  const handleCreateRoom = async () => {
-    if (!sessionRef.current) return;
-    const code = await sessionRef.current.createRoom();
-    setRoomCode(code);
-    setMyRole('X');
-    handleRestart();
-  };
-
-  // Vào phòng online
-  const handleJoinRoom = async (code) => {
-    if (!sessionRef.current) return;
-    const ok = await sessionRef.current.joinRoom(code);
-    if (ok) {
-      setRoomCode(code);
-      setMyRole('O');
-      sound.playTing();
-    } else {
-      alert('Không tìm thấy phòng!');
+    // Nếu Gemini không phản hồi hoặc trả câu trùng -> Dùng ngay Fallback Pool 150+ câu phân tầng
+    if (!pickedQuestion) {
+      pickedQuestion = getTieredFallbackQuestion(level, usedQuestionsSet.current);
+      if (pickedQuestion?.question) {
+        usedQuestionsSet.current.add(pickedQuestion.question.trim().toLowerCase());
+      }
     }
-  };
 
-  // Rời phòng online
-  const handleLeaveRoom = () => {
-    if (sessionRef.current) {
-      sessionRef.current.leaveRoom();
+    setCurrentQuestion(pickedQuestion);
+    setIsLoadingGemini(false);
+
+    // Đồng bộ P2P nếu đang đấu Online
+    if (!isBotMode && sessionRef.current) {
+      sessionRef.current.syncGameState({
+        questionIndex: index,
+        question: pickedQuestion,
+        scores,
+        isGameOver: false,
+      });
     }
-    setRoomCode('');
-    setConnectedPlayer(null);
-    setIsOnlineMode(false);
-    handleRestart();
-  };
+  }, [isBotMode, scores]);
 
+  // Khởi tạo ván đấu
   useEffect(() => {
+    usedQuestionsSet.current.clear();
     loadNextQuestion(0);
   }, [loadNextQuestion]);
 
-  // Đếm ngược 15s cho mỗi câu hỏi
+  // Kết nối P2P online nếu có roomCode
+  useEffect(() => {
+    if (isBotMode || !roomCode) return;
+
+    const session = new GameRoomSession(
+      'millionaire',
+      { uid: 'player_' + Date.now(), displayName: playerName, avatar: '💡' },
+      (gameState) => {
+        if (!gameState) return;
+        if (typeof gameState.questionIndex === 'number' && gameState.questionIndex !== currentQuestionIndex) {
+          setCurrentQuestionIndex(gameState.questionIndex);
+        }
+        if (gameState.question) {
+          setCurrentQuestion(gameState.question);
+          setSelectedOption(null);
+          setIsAnswered(false);
+          setTimeLeft(20);
+        }
+        if (gameState.scores) setScores(gameState.scores);
+        if (gameState.isGameOver) {
+          setIsGameOver(true);
+          setGameResultMsg(gameState.resultMsg || 'Trận đấu kết thúc!');
+        }
+      }
+    );
+
+    session.joinRoom(roomCode);
+    sessionRef.current = session;
+
+    return () => {
+      session.leaveRoom();
+      sessionRef.current = null;
+    };
+  }, [isBotMode, roomCode, playerName, currentQuestionIndex]);
+
+  // Đếm ngược 20s cho mỗi câu hỏi
   useEffect(() => {
     if (isGameOver || isAnswered || isLoadingGemini) {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -238,16 +184,16 @@ export function MillionaireGame({
     };
   }, [isGameOver, isAnswered, isLoadingGemini, currentQuestionIndex]);
 
-  // Hết giờ
+  // Hết giờ suy nghĩ
   const handleTimeOut = () => {
     sound.playBomb();
     setIsAnswered(true);
     setTimeout(() => {
-      endGame(false, 'Hết 15 giây suy nghĩ!');
-    }, 1500);
+      endGame(false, 'Hết 20 giây suy nghĩ! Dừng cuộc chơi.');
+    }, 1200);
   };
 
-  // Người chơi chọn phương án
+  // Người chơi chọn 1 phương án
   const handleSelectOption = (idx) => {
     if (isAnswered || isGameOver || hiddenOptions.includes(idx)) return;
 
@@ -262,29 +208,31 @@ export function MillionaireGame({
       sound.playWin();
 
       const earnedPts = 100 + timeLeft * 10;
-      setScores((prev) => ({ ...prev, player: prev.player + earnedPts }));
+      const nextScores = { ...scores, player: scores.player + earnedPts };
+      setScores(nextScores);
 
       if (currentQuestionIndex >= 14) {
-        confetti({ particleCount: 100, spread: 80, origin: { y: 0.5 } });
-        endGame(true, 'Xuất sắc chinh phục đỉnh cao 15 câu hỏi!');
+        // Vô địch 15/15 câu hỏi!
+        confetti({ particleCount: 120, spread: 90, origin: { y: 0.5 } });
+        endGame(true, 'XUẤT SẮC CHINH PHỤC ĐỈNH CAO 15 CÂU HỎI! 🏆');
       } else {
         setTimeout(() => {
           const nextIdx = currentQuestionIndex + 1;
           setCurrentQuestionIndex(nextIdx);
           loadNextQuestion(nextIdx);
-        }, 1800);
+        }, 1500);
       }
     } else {
       sound.playBomb();
       setTimeout(() => {
-        endGame(false, `Đáp án đúng là: ${['A', 'B', 'C', 'D'][currentQuestion.correct]}`);
-      }, 1800);
+        endGame(false, `Rất tiếc! Đáp án chính xác là: ${['A', 'B', 'C', 'D'][currentQuestion.correct]}`);
+      }, 1500);
     }
   };
 
-  // Trợ giúp 1: 50:50
+  // Quyền trợ giúp 1: 50:50
   const useFiftyFifty = () => {
-    if (!lifelines.fiftyFifty || isAnswered) return;
+    if (!lifelines.fiftyFifty || isAnswered || isGameOver) return;
     sound.playClick();
 
     const correct = currentQuestion.correct;
@@ -295,38 +243,46 @@ export function MillionaireGame({
     setLifelines((prev) => ({ ...prev, fiftyFifty: false }));
   };
 
-  // Trợ giúp 2: Gemini Cố Vấn
+  // Quyền trợ giúp 2: Cố Vấn MC Gemini
   const useGeminiHint = () => {
-    if (!lifelines.geminiHint || isAnswered) return;
+    if (!lifelines.geminiHint || isAnswered || isGameOver) return;
     sound.playClick();
 
-    const hint = currentQuestion.explanation || 'Hãy chú ý đến các từ khóa đặc trưng trong câu hỏi!';
+    const hint = currentQuestion.explanation || 'Hãy chú ý từ khóa đặc trưng trong câu hỏi!';
     setGeminiHintText(`🤖 MC Lại Văn Sâm tư vấn: "${hint}"`);
     setLifelines((prev) => ({ ...prev, geminiHint: false }));
   };
 
-  // Trợ giúp 3: Đổi câu hỏi
+  // Quyền trợ giúp 3: Đổi câu hỏi khác cùng cấp độ
   const useChangeQuestion = () => {
-    if (!lifelines.changeQuestion || isAnswered) return;
+    if (!lifelines.changeQuestion || isAnswered || isGameOver) return;
     sound.playClick();
     setLifelines((prev) => ({ ...prev, changeQuestion: false }));
     loadNextQuestion(currentQuestionIndex);
   };
 
-  // Kết thúc ván chơi
+  // Kết thúc ván đấu
   const endGame = (isWin, message) => {
     setIsGameOver(true);
     setGameResultMsg(message);
 
     if (isWin && !rewardClaimed && onRewardWon) {
       setRewardClaimed(true);
-      onRewardWon(150, 3);
+      onRewardWon(200, 5);
+    }
+
+    if (!isBotMode && sessionRef.current) {
+      sessionRef.current.syncGameState({
+        isGameOver: true,
+        resultMsg: message,
+      });
     }
   };
 
-  // Chơi lại từ đầu
+  // Chơi lại ván mới
   const handleRestart = () => {
     sound.playClick();
+    usedQuestionsSet.current.clear();
     setCurrentQuestionIndex(0);
     setIsGameOver(false);
     setGameResultMsg('');
@@ -340,174 +296,203 @@ export function MillionaireGame({
     loadNextQuestion(0);
   };
 
+  const optionLetters = ['A', 'B', 'C', 'D'];
+  const currentPrize = PRIZE_LADDER[currentQuestionIndex] || '200k';
+
   return (
     <div className="flex-1 flex flex-col justify-between p-2 select-none font-jakarta max-w-[430px] mx-auto w-full h-full overflow-hidden text-slate-800">
-      {/* 1. THANH CÔNG CỤ ONLINE P2P / BOT */}
-      <OnlineRoomToolbar
-        isOnlineMode={isOnlineMode}
-        onToggleMode={(mode) => {
-          setIsOnlineMode(mode);
-          handleRestart();
-        }}
-        roomCode={roomCode}
-        isHost={myRole === 'X'}
-        myRole={myRole}
-        connectedPlayer={connectedPlayer}
-        onCreateRoom={handleCreateRoom}
-        onJoinRoom={handleJoinRoom}
-        onLeaveRoom={handleLeaveRoom}
-      />
+      {/* 1. HEADER CHUẨN: [🔙 Về Sảnh] + TÊN GAME + MỐC THƯỞNG */}
+      <div className="bg-white/95 p-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0 flex items-center justify-between gap-1.5">
+        <button
+          onClick={() => {
+            sound.playClick();
+            if (onExit) onExit();
+          }}
+          className="px-2.5 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-fredoka font-black text-xs flex items-center gap-1 transition active:scale-95 border border-amber-300"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Về Sảnh</span>
+        </button>
 
-      {/* 2. HEADER: TIẾN TRÌNH & ĐỒNG HỒ */}
-      <div className="bg-white/95 p-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-500 text-black flex items-center justify-center font-fredoka font-black text-sm shadow-xs">
-            {currentQuestionIndex + 1}
-          </div>
-          <div className="leading-tight">
-            <span className="font-fredoka font-black text-xs text-amber-950 block">
-              AI LÀ TRIỆU PHÚ
-            </span>
-            <span className="text-[10px] text-slate-500">
-              Mốc: {PRIZE_LADDER[currentQuestionIndex]}
-            </span>
-          </div>
-        </div>
-
-        {/* Đồng hồ 15s */}
-        <div className="flex items-center gap-1 px-3 py-1 rounded-xl bg-amber-50 border border-amber-300">
-          <Clock className={`w-3.5 h-3.5 ${timeLeft <= 5 ? 'text-rose-600 animate-spin' : 'text-amber-600'}`} />
-          <span className={`font-mono font-black text-sm ${timeLeft <= 5 ? 'text-rose-600 animate-pulse' : 'text-amber-950'}`}>
-            {timeLeft}s
+        <div className="text-center leading-tight">
+          <span className="font-fredoka font-black text-xs text-purple-950 block">
+            AI LÀ TRIỆU PHÚ
+          </span>
+          <span className="text-[9px] text-purple-700 font-bold">
+            {isBotMode ? 'Đấu Trí Đỉnh Cao 💡' : `Phòng Online #${roomCode}`}
           </span>
         </div>
 
         <button
           onClick={handleRestart}
-          title="Chơi lại ván mới"
+          title="Chơi lại từ câu số 1"
           className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition active:scale-90"
         >
           <RotateCcw className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* 3. 3 QUYỀN TRỢ GIÚP */}
-      <div className="grid grid-cols-3 gap-2 my-2 shrink-0">
+      {/* 2. THANH TIẾN TRÌNH 15 CÂU HỎI & MỐC THƯỞNG */}
+      <div className="bg-gradient-to-r from-purple-900 to-indigo-900 text-white p-2 rounded-2xl border border-purple-400/40 shadow-xs shrink-0 my-1">
+        <div className="flex items-center justify-between text-xs font-fredoka font-black mb-1">
+          <span className="flex items-center gap-1 text-amber-300">
+            <Award className="w-3.5 h-3.5 text-amber-400" />
+            CÂU {currentQuestionIndex + 1} / 15
+          </span>
+          <span className="bg-amber-400 text-black px-2 py-0.5 rounded-full text-[10px] font-black animate-pulse">
+            Mốc: {currentPrize}
+          </span>
+          <span className="flex items-center gap-1 text-cyan-200 font-mono">
+            <Clock className="w-3.5 h-3.5 text-cyan-400" />
+            {timeLeft}s
+          </span>
+        </div>
+
+        {/* Thanh vạch tiến trình */}
+        <div className="w-full bg-purple-950/80 h-1.5 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 transition-all duration-300"
+            style={{ width: `${((currentQuestionIndex + 1) / 15) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 3. 3 QUYỀN TRỢ GIÚP KINH ĐIỂN */}
+      <div className="flex items-center justify-center gap-2 my-1 shrink-0">
         <button
           onClick={useFiftyFifty}
           disabled={!lifelines.fiftyFifty || isAnswered || isGameOver}
-          className={`py-1.5 px-2 rounded-xl text-xs font-fredoka font-bold border transition flex items-center justify-center gap-1 active:scale-95 ${
+          className={`flex-1 py-1.5 px-2 rounded-xl border text-[11px] font-fredoka font-black flex items-center justify-center gap-1 transition active:scale-95 shadow-xs ${
             lifelines.fiftyFifty
-              ? 'bg-amber-100 border-amber-300 text-amber-950 hover:bg-amber-200 shadow-2xs'
-              : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+              ? 'bg-amber-100 hover:bg-amber-200 border-amber-400 text-amber-950'
+              : 'bg-slate-100 border-slate-300 text-slate-400 opacity-60 cursor-not-allowed line-through'
           }`}
         >
-          <HelpCircle className="w-3.5 h-3.5" />
-          <span>50 : 50</span>
+          <span>50:50</span>
         </button>
 
         <button
           onClick={useGeminiHint}
           disabled={!lifelines.geminiHint || isAnswered || isGameOver}
-          className={`py-1.5 px-2 rounded-xl text-xs font-fredoka font-bold border transition flex items-center justify-center gap-1 active:scale-95 ${
+          className={`flex-1 py-1.5 px-2 rounded-xl border text-[11px] font-fredoka font-black flex items-center justify-center gap-1 transition active:scale-95 shadow-xs ${
             lifelines.geminiHint
-              ? 'bg-purple-100 border-purple-300 text-purple-950 hover:bg-purple-200 shadow-2xs'
-              : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+              ? 'bg-purple-100 hover:bg-purple-200 border-purple-400 text-purple-950'
+              : 'bg-slate-100 border-slate-300 text-slate-400 opacity-60 cursor-not-allowed line-through'
           }`}
         >
-          <Zap className="w-3.5 h-3.5 text-purple-600" />
-          <span>MC Gemini</span>
+          <BrainCircuit className="w-3.5 h-3.5 text-purple-700" />
+          <span>Hỏi MC</span>
         </button>
 
         <button
           onClick={useChangeQuestion}
           disabled={!lifelines.changeQuestion || isAnswered || isGameOver}
-          className={`py-1.5 px-2 rounded-xl text-xs font-fredoka font-bold border transition flex items-center justify-center gap-1 active:scale-95 ${
+          className={`flex-1 py-1.5 px-2 rounded-xl border text-[11px] font-fredoka font-black flex items-center justify-center gap-1 transition active:scale-95 shadow-xs ${
             lifelines.changeQuestion
-              ? 'bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200 shadow-2xs'
-              : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+              ? 'bg-blue-100 hover:bg-blue-200 border-blue-400 text-blue-950'
+              : 'bg-slate-100 border-slate-300 text-slate-400 opacity-60 cursor-not-allowed line-through'
           }`}
         >
-          <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
           <span>Đổi Câu</span>
         </button>
       </div>
 
-      {/* GỢI Ý TỪ CỐ VẤN */}
+      {/* Lời tư vấn từ MC */}
       {geminiHintText && (
-        <div className="mb-2 p-2 rounded-xl bg-purple-50 border border-purple-300 text-xs font-fredoka text-purple-900 shadow-2xs animate-in fade-in-50">
+        <div className="bg-purple-50 border border-purple-300 text-purple-950 p-2 rounded-xl text-xs font-medium my-1 animate-in fade-in shrink-0 leading-snug">
           {geminiHintText}
         </div>
       )}
 
-      {/* 4. KHU VỰC CÂU HỎI VÀ 4 PHƯƠNG ÁN */}
-      <div className="flex-1 flex flex-col justify-center overflow-y-auto my-1">
-        {/* Câu hỏi */}
-        <div className="bg-white/95 p-3.5 rounded-2xl border-2 border-amber-300 shadow-2xs mb-3 text-center">
-          {isLoadingGemini ? (
-            <div className="flex items-center justify-center gap-2 py-4 text-xs font-fredoka text-amber-800">
-              <span className="animate-spin">⏳</span>
-              <span>Đang kết nối Gemini AI lấy câu hỏi thú vị...</span>
-            </div>
-          ) : (
-            <p className="font-fredoka font-black text-sm text-amber-950 leading-relaxed">
-              {currentQuestion.question}
+      {/* 4. HỘP CÂU HỎI TRUNG TÂM */}
+      <div className="flex-1 flex flex-col justify-center my-1 bg-gradient-to-b from-[#1C1438] to-[#2B1B54] p-3.5 rounded-3xl border-2 border-amber-400/80 shadow-md relative overflow-hidden">
+        {isLoadingGemini ? (
+          <div className="flex flex-col items-center justify-center text-amber-200 space-y-2 py-6">
+            <Sparkles className="w-8 h-8 animate-spin text-amber-300" />
+            <p className="text-xs font-fredoka font-bold animate-pulse">
+              MC Lại Văn Sâm đang chuẩn bị câu hỏi mới...
             </p>
-          )}
-        </div>
-
-        {/* 4 Phương án A, B, C, D */}
-        <div className="grid grid-cols-1 gap-2">
-          {currentQuestion.options.map((opt, idx) => {
-            const isHidden = hiddenOptions.includes(idx);
-            const isSelected = selectedOption === idx;
-            const isCorrect = idx === currentQuestion.correct;
-
-            let btnStyle = 'bg-white hover:bg-amber-50 border-amber-200 text-slate-800';
-
-            if (isAnswered) {
-              if (isCorrect) {
-                btnStyle = 'bg-emerald-500 text-white border-emerald-600 animate-pulse';
-              } else if (isSelected) {
-                btnStyle = 'bg-rose-500 text-white border-rose-600';
-              }
-            } else if (isSelected) {
-              btnStyle = 'bg-amber-300 border-amber-400 text-black';
-            }
-
-            return (
-              <button
-                key={idx}
-                onClick={() => handleSelectOption(idx)}
-                disabled={isAnswered || isGameOver || isHidden}
-                className={`w-full p-2.5 rounded-xl border-2 font-fredoka font-bold text-xs flex items-center justify-between transition-all active:scale-98 shadow-2xs ${btnStyle} ${
-                  isHidden ? 'opacity-20 cursor-not-allowed pointer-events-none' : ''
-                }`}
-              >
-                <div className="flex items-center gap-2 text-left">
-                  <span className="w-5 h-5 rounded-lg bg-black/10 flex items-center justify-center font-black text-[10px] shrink-0">
-                    {['A', 'B', 'C', 'D'][idx]}
-                  </span>
-                  <span>{opt}</span>
-                </div>
-
-                {isAnswered && isCorrect && <CheckCircle2 className="w-4 h-4 text-white shrink-0" />}
-                {isAnswered && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-white shrink-0" />}
-              </button>
-            );
-          })}
-        </div>
+          </div>
+        ) : (
+          <div className="text-center">
+            <span className="text-[10px] font-fredoka font-black tracking-wider text-amber-300/80 uppercase block mb-1">
+              Câu hỏi số {currentQuestionIndex + 1}
+            </span>
+            <h2 className="text-sm sm:text-base font-fredoka font-black text-white leading-snug drop-shadow-xs">
+              {currentQuestion?.question}
+            </h2>
+          </div>
+        )}
       </div>
 
-      {/* 5. MODAL GAME OVER */}
+      {/* 5. 4 PHƯƠNG ÁN LỰA CHỌN A - B - C - D */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-1 shrink-0">
+        {(currentQuestion?.options || []).map((opt, idx) => {
+          const isHidden = hiddenOptions.includes(idx);
+          const isSelected = selectedOption === idx;
+          const isCorrect = idx === currentQuestion.correct;
+
+          let btnStyle = 'bg-white hover:bg-amber-50 border-amber-200 text-slate-800';
+
+          if (isAnswered) {
+            if (isCorrect) {
+              btnStyle = 'bg-emerald-500 text-white border-emerald-600 font-black animate-pulse';
+            } else if (isSelected) {
+              btnStyle = 'bg-rose-500 text-white border-rose-600 font-black';
+            } else {
+              btnStyle = 'bg-slate-100 text-slate-400 border-slate-200 opacity-50';
+            }
+          }
+
+          if (isHidden) {
+            return (
+              <div
+                key={idx}
+                className="h-11 rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-center text-slate-300 text-xs font-mono"
+              >
+                ---
+              </div>
+            );
+          }
+
+          return (
+            <button
+              key={idx}
+              onClick={() => handleSelectOption(idx)}
+              disabled={isAnswered || isGameOver || isHidden}
+              className={`min-h-[44px] p-2 rounded-2xl border-2 flex items-center gap-2 text-left transition-all active:scale-95 shadow-xs ${btnStyle}`}
+            >
+              <div
+                className={`w-6 h-6 rounded-lg flex items-center justify-center font-fredoka font-black text-xs shrink-0 ${
+                  isAnswered && isCorrect
+                    ? 'bg-white text-emerald-700'
+                    : isAnswered && isSelected
+                    ? 'bg-white text-rose-700'
+                    : 'bg-amber-100 text-amber-950'
+                }`}
+              >
+                {optionLetters[idx]}
+              </div>
+              <span className="text-xs font-semibold leading-tight line-clamp-2">
+                {opt}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 6. BANNER THÔNG BÁO KẾT THÚC */}
       {isGameOver && (
-        <div className="mt-2 p-2.5 bg-gradient-to-r from-amber-100 to-orange-100 border border-amber-400 rounded-2xl text-center shadow-xs animate-in zoom-in-95">
-          <span className="font-fredoka font-black text-xs text-amber-950 block">
+        <div className="mt-1 p-2.5 bg-gradient-to-r from-purple-100 via-amber-100 to-indigo-100 border-2 border-purple-400 rounded-2xl text-center shadow-md animate-in zoom-in-95 shrink-0">
+          <p className="font-fredoka font-black text-xs text-purple-950 mb-1.5">
             {gameResultMsg}
-          </span>
-          <span className="text-[10px] text-amber-800 block mt-0.5">
-            Điểm số: {scores.player} điểm • Thưởng: {PRIZE_LADDER[Math.max(0, currentQuestionIndex - 1)]}
-          </span>
+          </p>
+          <button
+            onClick={handleRestart}
+            className="px-4 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-fredoka font-black text-xs transition active:scale-95 shadow-xs"
+          >
+            Chơi Ván Mới 🔄
+          </button>
         </div>
       )}
     </div>

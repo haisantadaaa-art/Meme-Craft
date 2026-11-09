@@ -16,6 +16,8 @@ import { Millionaire } from './components/games/Millionaire';
 import { WordChain } from './components/games/WordChain';
 import { TapWarGame } from './components/games/TapWarGame';
 import { SlingPuckGame } from './components/games/SlingPuckGame';
+import { RPSBattleGame } from './components/games/RPSBattleGame';
+import { QuickReflexGame } from './components/games/QuickReflexGame';
 import { FloatingChatFAB } from './components/FloatingChatFAB';
 import { AuthModal } from './components/AuthModal';
 import { FriendsModal } from './components/FriendsModal';
@@ -27,7 +29,7 @@ import { sound } from './utils/soundEffects';
 export type ScreenState = 'AUTH' | 'PET_HOME' | 'MINIGAME_LOBBY' | 'GAME_ACTIVE';
 
 export interface GameLaunchConfig {
-  gameId: string; // 'SCHULTE' | 'GO' | 'XIANGQI' | 'CARO' | 'MONOPOLY' | 'MILLIONAIRE' | 'WORD_CHAIN' | 'TAP_WAR' | 'SLING_PUCK'
+  gameId: string; // 'SCHULTE' | 'GO' | 'XIANGQI' | 'CARO' | 'MONOPOLY' | 'MILLIONAIRE' | 'WORD_CHAIN' | 'TAP_WAR' | 'SLING_PUCK' | 'RPS' | 'REFLEX'
   roomCode?: string;
   myRole?: string;
   isBotMode?: boolean;
@@ -269,6 +271,32 @@ function MainApp() {
                     myRole={activeGame.myRole || 'p1'}
                     isBotMode={activeGame.isBotMode}
                     playerName={user?.displayName || 'Xạ Thủ'}
+                    onRewardWon={handleRewardWon}
+                    onExit={() => setScreenState('MINIGAME_LOBBY')}
+                  />
+                )}
+
+                {/* 10. OÁNH TÙ TÌ SINH TỬ */}
+                {activeGame.gameId === 'RPS' && (
+                  <RPSBattleGame
+                    roomCode={activeGame.roomCode}
+                    myRole={activeGame.myRole || 'p1'}
+                    isBotMode={activeGame.isBotMode}
+                    botDifficulty={activeGame.botDifficulty || 'medium'}
+                    playerName={user?.displayName || 'Đấu Sĩ'}
+                    onRewardWon={handleRewardWon}
+                    onExit={() => setScreenState('MINIGAME_LOBBY')}
+                  />
+                )}
+
+                {/* 11. ĐUA BẤM ĐÈN TỐC ĐỘ */}
+                {activeGame.gameId === 'REFLEX' && (
+                  <QuickReflexGame
+                    roomCode={activeGame.roomCode}
+                    myRole={activeGame.myRole || 'p1'}
+                    isBotMode={activeGame.isBotMode}
+                    botDifficulty={activeGame.botDifficulty || 'medium'}
+                    playerName={user?.displayName || 'Xạ Thủ Tốc Độ'}
                     onRewardWon={handleRewardWon}
                     onExit={() => setScreenState('MINIGAME_LOBBY')}
                   />
