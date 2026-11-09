@@ -1,0 +1,17 @@
+{
+  "name": "Tiệm Ẩm Thực & Sảnh Đấu Trí",
+  "short_name": "Tiệm Ẩm Thực",
+  "description": "Phòng Nuôi Thú Cưng Ấm Cúng kết hợp Sảnh Đấu Trí Minigame Online",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFDF7",
+  "theme_color": "#F59E0B",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦫</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

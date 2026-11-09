@@ -340,7 +340,7 @@ export function AuthProvider({ children }) {
     return { success: true, user: guestUser };
   };
 
-  // Đăng xuất
+  // Đăng xuất hoàn toàn về màn hình Auth Gateway
   const logout = async () => {
     try {
       await signOut(auth);
@@ -352,10 +352,81 @@ export function AuthProvider({ children }) {
     } catch (e) {
       // ignore
     }
-    const def = createDefaultUser();
-    setUser(def);
-    setIsAuthModalOpen(true);
+    setUser(null);
+    setIsAuthModalOpen(false);
     sound.playClick();
+  };
+
+  // Cập nhật điểm Elo xếp hạng kỳ thủ
+  const updateElo = (delta = 0) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const currentElo = prev.elo ?? 1200;
+      const nextElo = Math.max(100, currentElo + delta);
+      const isWin = delta > 0;
+      const updated = {
+        ...prev,
+        elo: nextElo,
+        rankWins: (prev.rankWins || 0) + (isWin ? 1 : 0),
+        rankLosses: (prev.rankLosses || 0) + (!isWin ? 1 : 0),
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        update(ref(db, `users/${prev.uid}`), {
+          elo: nextElo,
+          rankWins: updated.rankWins,
+          rankLosses: updated.rankLosses,
+        }).catch(() => {});
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  // Đăng nhập bằng Tên Tiệm & Mật khẩu
+  const loginWithShopCredentials = async (shopName, password) => {
+    const cleanName = (shopName || '').trim();
+    if (!cleanName) return { success: false, error: 'Vui lòng nhập tên tiệm hoặc tên người chơi' };
+
+    const uid = 'shop_' + btoa(unescape(encodeURIComponent(cleanName.toLowerCase()))).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+    const userRef = ref(db, `users/${uid}`);
+    let userData = null;
+
+    try {
+      const snap = await get(userRef);
+      if (snap.exists()) {
+        userData = snap.val();
+      }
+    } catch (e) {}
+
+    if (!userData) {
+      userData = {
+        uid,
+        friendCode: generateFriendCode(),
+        displayName: cleanName,
+        avatar: '👩‍🍳',
+        coins: 500,
+        gems: 20,
+        level: 1,
+        exp: 0,
+        expToNext: 100,
+        fertilizers: 5,
+        elo: 1200,
+        rankWins: 0,
+        rankLosses: 0,
+        friends: {},
+        isShopAccount: true,
+      };
+      try {
+        await set(userRef, userData);
+      } catch (e) {}
+    }
+
+    setUser(userData);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
+    } catch (e) {}
+    sound.playLevelUp();
+    return { success: true, user: userData };
   };
 
   // Đăng ký hoặc cập nhật hồ sơ
@@ -544,8 +615,10 @@ export function AuthProvider({ children }) {
         setFarmData,
         saveProfile,
         loginWithGoogle,
+        loginWithShopCredentials,
         loginAsGuest,
         logout,
+        updateElo,
         addCoins,
         addGems,
         addExp,

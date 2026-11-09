@@ -4,6 +4,8 @@ import { sound } from '../../utils/soundEffects';
 import { UserAvatar } from '../UserAvatar';
 import { PetStats } from './PetStats';
 import { PetWardrobe } from './PetWardrobe';
+import { LeaderboardModal } from '../rank/LeaderboardModal';
+import { FriendHavenVisitModal } from '../social/FriendHavenVisitModal';
 import confetti from 'canvas-confetti';
 import {
   Sparkles,
@@ -19,6 +21,8 @@ import {
   Gem,
   Flame,
   Check,
+  Trophy,
+  Home,
 } from 'lucide-react';
 
 export const PET_COMPANIONS = [
@@ -80,6 +84,8 @@ export function CozyPetView({ onOpenLobby }) {
   });
 
   const [isWardrobeOpen, setIsWardrobeOpen] = useState(false);
+  const [isRankOpen, setIsRankOpen] = useState(false);
+  const [isFriendVisitOpen, setIsFriendVisitOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
   // Chỉ số thú cưng
@@ -299,6 +305,31 @@ export function CozyPetView({ onOpenLobby }) {
         </div>
       </div>
 
+      {/* QUICK SOCIAL & RANK NAV BAR */}
+      <div className="flex items-center justify-between gap-2 mt-2 mb-0.5 shrink-0">
+        <button
+          onClick={() => {
+            sound.playClick();
+            setIsRankOpen(true);
+          }}
+          className="flex-1 py-1.5 px-2 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-300 text-amber-950 font-fredoka font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition"
+        >
+          <Trophy className="w-3.5 h-3.5 text-amber-600" />
+          <span>Đấu Hạng ({user?.elo ?? userProfile?.elo ?? 1000} Elo)</span>
+        </button>
+
+        <button
+          onClick={() => {
+            sound.playClick();
+            setIsFriendVisitOpen(true);
+          }}
+          className="flex-1 py-1.5 px-2 rounded-xl bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 border border-rose-300 text-rose-950 font-fredoka font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition"
+        >
+          <Home className="w-3.5 h-3.5 text-rose-600" />
+          <span>Ghé Thăm Bạn</span>
+        </button>
+      </div>
+
       {/* 2. THANH CHỌN 3 BÉ THÚ CƯNG (CAPYBARA / SHIBA / MÈO) */}
       <div className="grid grid-cols-3 gap-1.5 my-2 shrink-0">
         {PET_COMPANIONS.map((pet) => {
@@ -477,6 +508,26 @@ export function CozyPetView({ onOpenLobby }) {
           onSelectHat={(hatId) => setSelectedHat(hatId)}
           onClose={() => setIsWardrobeOpen(false)}
           userCoins={userProfile?.coins ?? 1000}
+          userElo={user?.elo ?? userProfile?.elo ?? 1000}
+        />
+      )}
+
+      {/* MODAL BẢNG XẾP HẠNG & ĐẤU HẠNG RANK */}
+      {isRankOpen && (
+        <LeaderboardModal
+          userElo={user?.elo ?? userProfile?.elo ?? 1000}
+          onClose={() => setIsRankOpen(false)}
+        />
+      )}
+
+      {/* MODAL GHÉ THĂM NHÀ BẠN */}
+      {isFriendVisitOpen && (
+        <FriendHavenVisitModal
+          userCoins={userProfile?.coins ?? 1000}
+          onRewardCoins={(earned) => {
+            if (addCoins) addCoins(earned);
+          }}
+          onClose={() => setIsFriendVisitOpen(false)}
         />
       )}
     </div>

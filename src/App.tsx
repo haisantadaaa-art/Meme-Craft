@@ -19,6 +19,8 @@ import { SlingPuckGame } from './components/games/SlingPuckGame';
 import { RPSBattleGame } from './components/games/RPSBattleGame';
 import { QuickReflexGame } from './components/games/QuickReflexGame';
 import { MiniRacingGame } from './components/games/MiniRacingGame';
+import { FingerSoccerGame } from './components/games/FingerSoccerGame';
+import { PassTheBombGame } from './components/games/PassTheBombGame';
 import { FloatingChatFAB } from './components/FloatingChatFAB';
 import { AuthModal } from './components/AuthModal';
 import { FriendsModal } from './components/FriendsModal';
@@ -39,10 +41,24 @@ export interface GameLaunchConfig {
 }
 
 function MainApp() {
-  const { user, userProfile, addCoins, addExp, signInAsGuest, signInWithGoogle } = (useAuth() || {}) as any;
+  const {
+    user,
+    userProfile,
+    addCoins,
+    addExp,
+    updateElo,
+    signInWithGoogle,
+    loginWithShopCredentials,
+  } = (useAuth() || {}) as any;
 
   // Hệ thống định tuyến màn hình chuẩn
   const [screenState, setScreenState] = useState<ScreenState>('PET_HOME');
+
+  // Modal Đăng nhập bằng Tên Tiệm & Mật khẩu
+  const [showShopLoginModal, setShowShopLoginModal] = useState(false);
+  const [shopNameInput, setShopNameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   // Trạng thái minigame đang thi đấu
   const [activeGame, setActiveGame] = useState<GameLaunchConfig>({
@@ -83,10 +99,39 @@ function MainApp() {
     setScreenState('GAME_ACTIVE');
   };
 
-  // Nhận thưởng từ minigame
-  const handleRewardWon = (coins: number, fertilizers: number = 0) => {
-    if (addCoins) addCoins(coins);
-    if (addExp) addExp(Math.round(coins / 2));
+  // Nhận thưởng từ minigame (+25 Elo khi thắng online, -10 Elo khi thua)
+  const handleRewardWon = (reward: any, fertilizers: number = 0) => {
+    const coins = typeof reward === 'object' ? reward.coins : reward;
+    const exp = typeof reward === 'object' ? reward.exp : Math.round((coins || 50) / 2);
+    const eloDelta =
+      typeof reward === 'object'
+        ? reward.elo
+        : activeGame.isBotMode
+        ? 0
+        : 25;
+
+    if (addCoins && coins) addCoins(coins);
+    if (addExp && exp) addExp(exp);
+    if (updateElo && eloDelta) updateElo(eloDelta);
+  };
+
+  // Xử lý đăng nhập Tên Tiệm & Mật khẩu
+  const handleShopLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shopNameInput.trim()) {
+      setLoginError('Vui lòng nhập tên tiệm hoặc biệt danh!');
+      return;
+    }
+    try {
+      if (loginWithShopCredentials) {
+        loginWithShopCredentials(shopNameInput.trim(), passwordInput.trim());
+      }
+      sound.playWin();
+      setShowShopLoginModal(false);
+      setLoginError('');
+    } catch (err: any) {
+      setLoginError(err?.message || 'Đăng nhập không thành công');
+    }
   };
 
   const handleAcceptInvite = (invitation: any) => {
@@ -108,26 +153,27 @@ function MainApp() {
     <div className="w-full min-h-[100dvh] h-[100dvh] bg-[#F5EDE0] flex justify-center items-center overflow-hidden font-jakarta select-none text-slate-800">
       {/* Khung dọc App chuẩn Mobile (w-full max-w-[430px]) */}
       <div className="w-full max-w-[430px] min-h-[100dvh] h-[100dvh] bg-[#FFFDF7] flex flex-col relative shadow-2xl overflow-hidden">
-        {/* 1. MÀN HÌNH ĐĂNG NHẬP (NẾU CHƯA CÓ USER) */}
+        {/* 1. MÀN HÌNH ĐĂNG NHẬP BẮT BUỘC (MANDATORY AUTH GATEWAY) */}
         {!user ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#FFFDF7] to-[#FFF4DE]">
-            <div className="w-20 h-20 rounded-3xl bg-amber-100 border-4 border-amber-400 flex items-center justify-center text-5xl mb-3 shadow-md animate-bounce">
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#FFFDF7] via-[#FFF9EE] to-[#FFE8C2] relative">
+            <div className="w-24 h-24 rounded-3xl bg-amber-100 border-4 border-amber-400 flex items-center justify-center text-6xl mb-3 shadow-lg animate-bounce">
               🦫
             </div>
-            <h1 className="font-fredoka font-black text-2xl text-amber-950 mb-1">
+            <h1 className="font-fredoka font-black text-2xl text-amber-950 mb-1 tracking-wide">
               TIỆM ẨM THỰC
             </h1>
-            <p className="text-xs text-amber-900/80 font-fredoka mb-6 max-w-[260px]">
-              Nuôi dưỡng thú cưng Cozy Haven & Tranh tài tại sảnh đấu trí đối kháng
+            <p className="text-xs text-amber-900/80 font-fredoka mb-7 max-w-[280px]">
+              Nuôi dưỡng thú cưng Cozy Haven & Thi đấu sảnh trí tuệ thời gian thực
             </p>
 
-            <div className="w-full space-y-2.5 max-w-[280px]">
+            <div className="w-full space-y-3 max-w-[290px]">
+              {/* Nút 1: Đăng nhập Google chính */}
               <button
                 onClick={() => {
                   sound.playClick();
                   if (signInWithGoogle) signInWithGoogle();
                 }}
-                className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-800 font-fredoka font-black text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-800 font-fredoka font-black text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-2.5"
               >
                 <img
                   src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
@@ -137,16 +183,89 @@ function MainApp() {
                 <span>Đăng Nhập Bằng Google</span>
               </button>
 
+              {/* Nút 2: Đăng nhập bằng Tên Tiệm & Mật khẩu */}
               <button
                 onClick={() => {
                   sound.playClick();
-                  if (signInAsGuest) signInAsGuest();
+                  setShowShopLoginModal(true);
                 }}
-                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-black font-fredoka font-black text-xs shadow-md transition active:scale-95"
+                className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:brightness-105 text-amber-950 font-fredoka font-black text-xs shadow-md border border-amber-500 transition active:scale-95 flex items-center justify-center gap-2"
               >
-                Chơi Ngay (Khách Vãng Lai) 🐾
+                <span>🔑 Tên Tiệm & Mật Khẩu / Tạo Mới</span>
               </button>
             </div>
+
+            <p className="text-[10px] text-amber-800/70 mt-6 font-semibold">
+              ⭐ Đăng nhập để lưu tiến trình thú cưng và bảo toàn điểm xếp hạng Elo
+            </p>
+
+            {/* MODAL ĐĂNG NHẬP TÊN TIỆM & MẬT KHẨU */}
+            {showShopLoginModal && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-5 w-full max-w-[340px] border-2 border-amber-300 shadow-2xl text-left">
+                  <h3 className="font-fredoka font-black text-base text-amber-950 mb-1">
+                    Đăng Nhập / Tạo Hồ Sơ Tiệm
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mb-3 font-medium">
+                    Nhập tên tiệm và mật khẩu để đăng nhập hoặc tự động tạo tài khoản mới.
+                  </p>
+
+                  <form onSubmit={handleShopLoginSubmit} className="space-y-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        Tên Tiệm / Biệt Danh
+                      </label>
+                      <input
+                        type="text"
+                        value={shopNameInput}
+                        onChange={(e) => setShopNameInput(e.target.value)}
+                        placeholder="VD: Tiệm Trà Capybara"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-amber-200 focus:outline-none focus:border-amber-500 font-bold"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        Mật Khẩu (Tùy chọn)
+                      </label>
+                      <input
+                        type="password"
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        placeholder="Nhập mật khẩu..."
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-amber-200 focus:outline-none focus:border-amber-500 font-bold"
+                      />
+                    </div>
+
+                    {loginError && (
+                      <p className="text-[10px] text-red-600 font-bold">
+                        {loginError}
+                      </p>
+                    )}
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowShopLoginModal(false);
+                          setLoginError('');
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-fredoka font-bold text-xs"
+                      >
+                        Đóng
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-black font-fredoka font-black text-xs shadow-sm"
+                      >
+                        Vào Game
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* 2. CÁC MÀN HÌNH CHÍNH */
@@ -311,6 +430,32 @@ function MainApp() {
                     isBotMode={activeGame.isBotMode}
                     botDifficulty={activeGame.botDifficulty || 'medium'}
                     playerName={user?.displayName || 'Tay Đua'}
+                    onRewardWon={handleRewardWon}
+                    onExit={() => setScreenState('MINIGAME_LOBBY')}
+                  />
+                )}
+
+                {/* 13. BÓNG ĐÁ BÀN 2 NÚT */}
+                {activeGame.gameId === 'SOCCER' && (
+                  <FingerSoccerGame
+                    roomCode={activeGame.roomCode}
+                    myRole={activeGame.myRole || 'p1'}
+                    isBotMode={activeGame.isBotMode}
+                    botDifficulty={activeGame.botDifficulty || 'medium'}
+                    playerName={user?.displayName || 'Cầu Thủ'}
+                    onRewardWon={handleRewardWon}
+                    onExit={() => setScreenState('MINIGAME_LOBBY')}
+                  />
+                )}
+
+                {/* 14. TRUYỀN BOM NỔ CHẬM */}
+                {activeGame.gameId === 'BOMB' && (
+                  <PassTheBombGame
+                    roomCode={activeGame.roomCode}
+                    myRole={activeGame.myRole || 'p1'}
+                    isBotMode={activeGame.isBotMode}
+                    botDifficulty={activeGame.botDifficulty || 'medium'}
+                    playerName={user?.displayName || 'Chủ Tiệm'}
                     onRewardWon={handleRewardWon}
                     onExit={() => setScreenState('MINIGAME_LOBBY')}
                   />

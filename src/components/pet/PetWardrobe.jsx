@@ -1,6 +1,6 @@
 import React from 'react';
 import { sound } from '../../utils/soundEffects';
-import { X, Check, Sparkles } from 'lucide-react';
+import { X, Check, Lock, Sparkles, Award } from 'lucide-react';
 
 export const WARDROBE_HATS = [
   { id: 'tangerine', name: 'Quýt Mọng Nước', icon: '🍊', desc: 'Đặc sản của bé Capybara điềm đạm.', cost: 0 },
@@ -9,10 +9,32 @@ export const WARDROBE_HATS = [
   { id: 'sunglasses', name: 'Kính Mát Siêu Ngầu', icon: '🕶️', desc: 'Sành điệu phong cách barista.', cost: 80 },
   { id: 'chef_hat', name: 'Mũ Đầu Bếp Trưởng', icon: '👨‍🍳', desc: 'Bậc thầy ẩm thực món ngon.', cost: 60 },
   { id: 'flower', name: 'Hoa Cài Đóa Hồng', icon: '🌸', desc: 'Ngọt ngào, dịu dàng, đáng yêu.', cost: 40 },
+  {
+    id: 'scholar_hat',
+    name: 'Mũ Trạng Nguyên',
+    icon: '🎓',
+    desc: 'Vinh quang Trạng Nguyên thi đấu! Mở khóa tại Rank Vàng (1.400 Elo).',
+    reqRank: 'VÀNG',
+    reqElo: 1400,
+    cost: 0,
+  },
+  {
+    id: 'diamond_crown',
+    name: 'Vương Miện Kim Cương & Hào Quang',
+    icon: '👑✨',
+    desc: 'Đặc quyền Tối Thượng! Mở khóa tại Rank Đại Sư (2.000 Elo).',
+    reqRank: 'ĐẠI SƯ',
+    reqElo: 2000,
+    cost: 0,
+  },
 ];
 
-export function PetWardrobe({ currentHat, onSelectHat, onClose, userCoins = 0 }) {
+export function PetWardrobe({ currentHat, onSelectHat, onClose, userCoins = 0, userElo = 1200 }) {
   const handleSelect = (hat) => {
+    if (hat.reqElo && userElo < hat.reqElo) {
+      sound.playBomb();
+      return;
+    }
     sound.playClick();
     onSelectHat(hat.id);
   };
@@ -38,7 +60,7 @@ export function PetWardrobe({ currentHat, onSelectHat, onClose, userCoins = 0 })
               TỦ ĐỒ PHỤ KIỆN THÚ CƯNG
             </h3>
             <span className="text-[10px] text-slate-500 font-bold">
-              Lựa chọn chiếc mũ xinh xắn nhất cho bé yêu
+              Elo hiện tại của bạn: <strong className="text-amber-800 font-mono">{userElo} Elo</strong>
             </span>
           </div>
         </div>
@@ -47,16 +69,26 @@ export function PetWardrobe({ currentHat, onSelectHat, onClose, userCoins = 0 })
         <div className="grid grid-cols-2 gap-2 my-2 max-h-[50vh] overflow-y-auto p-1">
           {WARDROBE_HATS.map((hat) => {
             const isSelected = currentHat === hat.id;
+            const isLocked = hat.reqElo && userElo < hat.reqElo;
+
             return (
               <button
                 key={hat.id}
                 onClick={() => handleSelect(hat)}
-                className={`p-2.5 rounded-2xl border-2 flex flex-col items-center text-center transition-all active:scale-95 ${
-                  isSelected
+                className={`p-2.5 rounded-2xl border-2 flex flex-col items-center text-center transition-all relative ${
+                  isLocked
+                    ? 'bg-slate-100/90 border-slate-300 opacity-75 cursor-not-allowed'
+                    : isSelected
                     ? 'bg-amber-100 border-amber-500 shadow-sm scale-102'
-                    : 'bg-white hover:bg-amber-50/50 border-amber-200'
+                    : 'bg-white hover:bg-amber-50/50 border-amber-200 active:scale-95'
                 }`}
               >
+                {isLocked && (
+                  <div className="absolute top-2 right-2 bg-slate-800 text-white p-1 rounded-lg shadow-xs">
+                    <Lock className="w-3 h-3 text-amber-300" />
+                  </div>
+                )}
+
                 <span className="text-3xl mb-1">{hat.icon}</span>
                 <span className="font-fredoka font-black text-xs text-amber-950 truncate w-full">
                   {hat.name}
@@ -66,10 +98,18 @@ export function PetWardrobe({ currentHat, onSelectHat, onClose, userCoins = 0 })
                 </span>
 
                 <div className="mt-2 flex items-center justify-center w-full">
-                  {isSelected ? (
+                  {isLocked ? (
+                    <span className="px-2 py-0.5 rounded-lg bg-slate-200 text-slate-600 font-fredoka font-bold text-[9px] flex items-center gap-1">
+                      <span>Cần Rank {hat.reqRank}</span>
+                    </span>
+                  ) : isSelected ? (
                     <span className="px-2 py-0.5 rounded-lg bg-emerald-500 text-white font-fredoka font-black text-[9px] flex items-center gap-1">
                       <Check className="w-2.5 h-2.5" />
                       <span>Đang Đội</span>
+                    </span>
+                  ) : hat.reqElo ? (
+                    <span className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-fredoka font-black text-[9px]">
+                      Đã Mở Khóa ✨
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-lg bg-amber-200 text-amber-950 font-fredoka font-bold text-[9px]">

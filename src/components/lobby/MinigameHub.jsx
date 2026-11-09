@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { sound } from '../../utils/soundEffects';
 import { MatchmakingModal } from './MatchmakingModal';
+import { LeaderboardModal } from '../rank/LeaderboardModal';
 import {
   Home,
   Coins,
@@ -130,8 +131,28 @@ export const LOBBY_MINIGAMES = [
     subtitle: 'Đua 2 Người 1.000m 🏎️💨',
     icon: '🏎️💨',
     desc: 'Đường đua chia đôi màn hình dọc, né vũng dầu nhặt nitro quýt tăng tốc cán đích 1.000m trước!',
-    badge: 'MỚI 2P RACER 🏎️',
-    badgeColor: 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-black animate-pulse',
+    badge: '2P RACER 🏎️',
+    badgeColor: 'bg-gradient-to-r from-red-500 to-amber-500 text-white font-black',
+    gradient: 'from-red-600 to-orange-600',
+  },
+  {
+    id: 'SOCCER',
+    name: 'Bóng Đá Bàn 2 Nút',
+    subtitle: 'Lao Lên & Sút Căng ⚽🔥',
+    icon: '⚽🔥',
+    desc: '2 nút điều khiển Lao Lên và Sút Căng, tranh bóng vật lý cực đã, vang cọc xà giòn tan chạm là sướng!',
+    badge: 'MỚI 2P SOCCER ⚽',
+    badgeColor: 'bg-gradient-to-r from-emerald-500 to-green-600 text-white font-black animate-pulse',
+    gradient: 'from-emerald-500 to-teal-600',
+  },
+  {
+    id: 'BOMB',
+    name: 'Truyền Bom Nổ Chậm',
+    subtitle: 'Nhanh Tay Chuyền Bom 💣⚡',
+    icon: '💣⚡',
+    desc: 'Giải nhanh câu đố phản xạ để chuyền bom sang đối thủ trước khi ngòi nổ phát hỏa làm đen mặt!',
+    badge: 'MỚI 2P BOM 💥',
+    badgeColor: 'bg-gradient-to-r from-red-500 to-rose-600 text-white font-black animate-pulse',
     gradient: 'from-red-600 to-orange-600',
   },
 ];
@@ -139,6 +160,7 @@ export const LOBBY_MINIGAMES = [
 export function MinigameHub({ user, userProfile, onBackToPet, onStartGame }) {
   const [selectedGameForMatch, setSelectedGameForMatch] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isRankOpen, setIsRankOpen] = useState(false);
 
   const filteredGames = LOBBY_MINIGAMES.filter((g) =>
     g.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -157,7 +179,7 @@ export function MinigameHub({ user, userProfile, onBackToPet, onStartGame }) {
           className="px-2.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-fredoka font-black text-xs flex items-center gap-1 transition active:scale-95 border border-amber-300"
         >
           <Home className="w-3.5 h-3.5" />
-          <span>Về Phòng Pet</span>
+          <span>Về Pet</span>
         </button>
 
         <div className="text-center leading-tight">
@@ -165,19 +187,27 @@ export function MinigameHub({ user, userProfile, onBackToPet, onStartGame }) {
             SẢNH ĐẤU TRÍ ONLINE
           </span>
           <span className="text-[9px] text-slate-500 font-bold">
-            12 Trò Chơi Đối Kháng ⚔️
+            14 Trò Chơi Đối Kháng ⚔️
           </span>
         </div>
 
-        {/* Tiền Vàng & Kim Cương */}
-        <div className="flex items-center gap-1.5 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200/60">
-          <div className="flex items-center gap-0.5 text-xs font-mono font-black text-amber-800">
+        {/* Nút Xem Hạng Elo & Tiền */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              sound.playClick();
+              setIsRankOpen(true);
+            }}
+            className="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs flex items-center gap-1 border border-amber-300 active:scale-95 transition"
+            title="Bảng xếp hạng"
+          >
+            <Trophy className="w-3.5 h-3.5 text-amber-600" />
+            <span className="font-mono text-[11px] font-black">{user?.elo ?? userProfile?.elo ?? 1000}</span>
+          </button>
+
+          <div className="flex items-center gap-0.5 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200/60 text-xs font-mono font-black text-amber-800">
             <Coins className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
             <span>{userProfile?.coins ?? 1250}</span>
-          </div>
-          <div className="flex items-center gap-0.5 text-xs font-mono font-black text-blue-800">
-            <Gem className="w-3.5 h-3.5 text-blue-500 fill-blue-400" />
-            <span>{userProfile?.diamonds ?? 25}</span>
           </div>
         </div>
       </div>
@@ -246,6 +276,14 @@ export function MinigameHub({ user, userProfile, onBackToPet, onStartGame }) {
           user={user}
           onStartGame={onStartGame}
           onClose={() => setSelectedGameForMatch(null)}
+        />
+      )}
+
+      {/* MODAL BẢNG XẾP HẠNG ELO */}
+      {isRankOpen && (
+        <LeaderboardModal
+          userElo={user?.elo ?? userProfile?.elo ?? 1000}
+          onClose={() => setIsRankOpen(false)}
         />
       )}
     </div>
