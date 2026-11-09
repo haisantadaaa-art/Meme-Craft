@@ -43,26 +43,48 @@ export function MatchmakingModal({ game, user, onStartGame, onClose }) {
     sound.playClick();
     setActiveTab('quick_searching');
     setIsSearching(true);
+    setConnectedGuest(null);
+    setMatchCountdown(null);
 
     const session = new GameRoomSession(
       game.id.toLowerCase(),
       user,
       null,
       (guest) => {
+        // Khi có người tham gia phòng của Host
         setConnectedGuest(guest);
-        sound.playTing();
+        sound.playWin();
+        // Đếm ngược 3s vào trận cho Host
+        let count = 3;
+        setMatchCountdown(3);
+        const timer = setInterval(() => {
+          count -= 1;
+          setMatchCountdown(count);
+          if (count === 0) {
+            clearInterval(timer);
+            onStartGame({
+              gameId: game.id,
+              roomCode: session.roomCode,
+              myRole: 'p1',
+              isBotMode: false,
+              botDifficulty: 'medium',
+              session,
+            });
+          }
+        }, 1000);
       },
       () => setConnectedGuest(null)
     );
     sessionRef.current = session;
 
     const res = await session.quickMatch({}, (count) => {
+      // Đếm ngược cho Guest khi vào được phòng của Host
       setMatchCountdown(count);
       if (count === 0) {
         onStartGame({
           gameId: game.id,
           roomCode: res.roomCode,
-          myRole: res.isHost ? 'p1' : 'p2',
+          myRole: 'p2',
           isBotMode: false,
           botDifficulty: 'medium',
           session,
@@ -74,9 +96,23 @@ export function MatchmakingModal({ game, user, onStartGame, onClose }) {
     setIsSearching(false);
 
     if (res.matched) {
-      // Nếu khớp ngay với host đang chờ
-      setConnectedGuest({ name: 'Đối Thủ Online' });
+      // Đã ghép nối trực tiếp vào phòng người khác
+      setConnectedGuest({ name: 'Chủ Phòng' });
+      sound.playTing();
     }
+  };
+
+  // Hủy tìm trận nhanh
+  const handleCancelQuickMatch = async () => {
+    sound.playClick();
+    if (sessionRef.current) {
+      await sessionRef.current.leaveRoom();
+      sessionRef.current = null;
+    }
+    setActiveTab('menu');
+    setIsSearching(false);
+    setMatchCountdown(null);
+    setConnectedGuest(null);
   };
 
   // 2. TẠO PHÒNG MỚI (CREATE ROOM)
@@ -294,7 +330,7 @@ export function MatchmakingModal({ game, user, onStartGame, onClose }) {
           </div>
         )}
 
-        {/* TAB TÌM TRẬN NHANH ĐANG DÒ PHÒNG */}
+        {/* TAB TÌM TRẬN NHANH ĐANG DÒ PHÒNG HOẶC ĐỢI KHÁCH */}
         {activeTab === 'quick_searching' && (
           <div className="py-6 flex flex-col items-center justify-center text-center animate-in zoom-in">
             {matchCountdown !== null && matchCountdown > 0 ? (
@@ -307,23 +343,47 @@ export function MatchmakingModal({ game, user, onStartGame, onClose }) {
                   {matchCountdown}
                 </div>
                 <span className="text-xs text-slate-500 font-bold block">
-                  Đang tải bàn cờ thi đấu...
+                  Đang khởi động trận đấu...
                 </span>
               </div>
-            ) : (
+            ) : isSearching ? (
               <div className="space-y-2.5">
                 <Loader2 className="w-10 h-10 text-orange-500 animate-spin mx-auto" />
                 <h4 className="font-fredoka font-black text-sm text-amber-950">
                   Đang quét phòng trống trên máy chủ...
                 </h4>
                 <p className="text-[10px] text-slate-500 max-w-[240px]">
-                  Nếu không có phòng sẵn, hệ thống sẽ tự động tạo phòng mở và đợi đối thủ tiếp theo.
+                  Hệ thống đang tìm kiếm đối thủ đang chờ ghép trận.
                 </p>
                 <button
-                  onClick={() => setActiveTab('menu')}
+                  onClick={handleCancelQuickMatch}
                   className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-fredoka font-bold text-xs transition"
                 >
-                  Hủy Quét
+                  Hủy Tìm Trận
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="relative w-14 h-14 mx-auto flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-full bg-orange-400 opacity-30 animate-ping" />
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-orange-400 to-rose-500 flex items-center justify-center text-white shadow-md">
+                    <Zap className="w-6 h-6 fill-white animate-pulse" />
+                  </div>
+                </div>
+                <h4 className="font-fredoka font-black text-sm text-amber-950">
+                  Đang chờ đối thủ vào phòng... (1/2)
+                </h4>
+                <span className="inline-block bg-amber-100 border border-amber-300 text-amber-950 font-mono font-black text-xs px-2.5 py-1 rounded-xl">
+                  {roomCode}
+                </span>
+                <p className="text-[10px] text-slate-500 max-w-[240px]">
+                  Người chơi tiếp theo bấm "Tìm Trận Nhanh" sẽ tự động được ghép vào phòng của bạn.
+                </p>
+                <button
+                  onClick={handleCancelQuickMatch}
+                  className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-fredoka font-bold text-xs transition active:scale-95"
+                >
+                  Hủy Tìm Trận
                 </button>
               </div>
             )}

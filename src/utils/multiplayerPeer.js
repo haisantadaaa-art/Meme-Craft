@@ -36,8 +36,8 @@ export class GameRoomSession {
   }
 
   // 1. TẠO PHÒNG MỚI (HOST)
-  async createRoom(initialGameState = {}) {
-    const prefix = (this.gameType.slice(0, 2) || 'TT').toUpperCase();
+  async createRoom(initialGameState = {}, customPrefix = null) {
+    const prefix = customPrefix || (this.gameType.slice(0, 2) || 'TT').toUpperCase();
     this.roomCode = generateRoomCode(prefix);
     this.isHost = true;
     this.myRole = 'p1';
@@ -110,6 +110,9 @@ export class GameRoomSession {
 
   // 3. TÌM TRẬN NHANH (QUICK MATCH)
   async quickMatch(initialGameState = {}, onCountDown = null) {
+    const rawPrefix = (this.gameType.slice(0, 2) || 'RA').toUpperCase();
+    const quickPrefix = `${rawPrefix}-QUICK`;
+
     try {
       // Quét các phòng đang chờ cùng loại game
       const snapshot = await get(ref(db, 'minigame_rooms'));
@@ -139,7 +142,7 @@ export class GameRoomSession {
       if (targetCode) {
         await this.joinRoom(targetCode);
 
-        // Khởi động đếm ngược 3s
+        // Khởi động đếm ngược 3s cho Guest
         if (onCountDown) {
           onCountDown(3);
           setTimeout(() => onCountDown(2), 1000);
@@ -150,12 +153,12 @@ export class GameRoomSession {
         return { matched: true, roomCode: targetCode, isHost: false };
       }
 
-      // Nếu chưa có phòng rảnh -> Tự tạo phòng mở
-      const newCode = await this.createRoom(initialGameState);
+      // Nếu chưa có phòng rảnh -> Tự tạo phòng mở với tiền tố QUICK
+      const newCode = await this.createRoom(initialGameState, quickPrefix);
       return { matched: false, roomCode: newCode, isHost: true };
     } catch (e) {
       console.warn('Quick Match fallback:', e);
-      const code = await this.createRoom(initialGameState);
+      const code = await this.createRoom(initialGameState, quickPrefix);
       return { matched: false, roomCode: code, isHost: true };
     }
   }
